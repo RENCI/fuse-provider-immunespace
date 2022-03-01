@@ -1,6 +1,6 @@
 {
-  "id":  "fuse-provider-template",
-  "name": "Example of a FUSE data provider",
+  "id":  "fuse-provider-immunespace",
+  "name": "FUSE Immunespace data provider",
   "description": "Serves data according to DRS specification",
   "type": {
     "group": "org.ga4gh",
@@ -12,7 +12,7 @@
     "url": "https://renci.org"
   },
   "contactUrl": "mailto:krobasky@gmail.com",
-  "documentationUrl": "https://github.com/krobasky/fuse-provider-template",
+  "documentationUrl": "https://github.com/krobasky/fuse-provider-immunespace",
   "createdAt": "2022-02-07T12:00:00Z",
   "updatedAt": "2022-02-07T12:00:00Z",
   "environment": "test",
