@@ -1,15 +1,46 @@
 version: '3.8'
 services:
-  fuse-provider-template:
-    container_name: fuse-provider-template
+  immunespace-redis:
+    container_name: immunespace-redis
+    image: redis:alpine
+    restart: always
+    environment: {}
+    volumes:
+      - /data
+    expose:
+      - 6379
+    command: [ "--appendonly", "yes" ]
+
+  immunespace-mongodb:
+    container_name: immunespace-mongodb
+    image: mongo
+    env_file:
+      - .env
+    restart: always
+    volumes:
+      - mongodb_data_container:/data/db
+      - ./init_mongo.sh:/docker-entrypoint-initdb.d/init_mongo.sh
+    expose:
+      - 27017
+      - 27018
+      - 27019
+
+  fuse-provider-immunespace:
+    container_name: fuse-provider-immunespace
     build: .
     restart: always
-    env_file: .env
+    env_file:
+      - .env
     ports:
-        - ${API_PORT}:8000
+        - "${API_PORT}:8000"
     volumes:
         - /var/run/docker.sock:/var/run/docker.sock
-        - ./config/service_info.json:/app/service_info.json
+        - ./data:/app/data
     expose:
       - ${API_PORT}
+    depends_on:
+      - immunespace-redis
+      - immunespace-mongodb
 
+volumes:
+  mongodb_data_container:
