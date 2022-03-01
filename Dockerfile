@@ -1,4 +1,4 @@
-FROM python:3.7
+FROM python:3.9-buster
 
 EXPOSE 8000
 
@@ -14,8 +14,8 @@ RUN curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add -
 
 RUN add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/debian $(lsb_release -cs) stable"
 
-
 COPY . /app
-COPY ./fuse /fuse
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+WORKDIR /app/src/main/python
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "debug" ]
