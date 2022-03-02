@@ -49,11 +49,9 @@ q = Queue(connection=redis_connection, is_async=True, default_timeout=3600)
 
 mongo_user_name = os.getenv('MONGO_NON_ROOT_USERNAME')
 mongo_password = os.getenv('MONGO_NON_ROOT_PASSWORD')
-# mongo_user_name = os.getenv('MONGO_INITDB_ROOT_USERNAME')
-# mongo_password = os.getenv('MONGO_INITDB_ROOT_PASSWORD')
 mongo_database_name = os.getenv('MONGO_INITDB_DATABASE')
 mongo_database_connection_url = f"mongodb://{mongo_user_name}:{mongo_password}@immunespace-mongodb:27017/{mongo_database_name}"
-logger.info(mongo_database_connection_url)
+# logger.info(mongo_database_connection_url)
 mongo_client = pymongo.MongoClient(mongo_database_connection_url)
 mongo_db = mongo_client[mongo_database_name]
 mongo_db_immunespace_downloads_column = mongo_db["immunespace_downloads"]
@@ -104,54 +102,22 @@ async def objects(object_id: str = Path(default="", description="DrsObject ident
                   expand: bool = Query(default=False,
                                        description="If false and the object_id refers to a bundle, then the ContentsObject array contains only those objects directly contained in the bundle. That is, if the bundle contains other bundles, those other bundles are not recursively included in the result. If true and the object_id refers to a bundle, then the entire set of objects in the bundle is expanded. That is, if the bundle contains aother bundles, then those other bundles are recursively expanded and included in the result. Recursion continues through the entire sub-tree of the bundle. If the object_id refers to a blob, then the query parameter is ignored.")):
     projection = {"_id": 0, "immunespace_download_id": 1, "email": 1, "group_id": 1, "apikey": 1, "status": 1, "date_created": 1, "start_date": 1, "end_date": 1}
-
     query = {"immunespace_download_id": object_id}
     found_immunespace_download = mongo_db_immunespace_downloads_column.find_one(query, projection)
     logger.info(f"{found_immunespace_download}")
 
-    ret = ImmunespaceGA4GHDRSResponse(id=found_immunespace_download['immunespace_download_id'],
-                                      self_uri=f"http://localhost:{os.getenv('API_PORT')}/data/{found_immunespace_download['immunespace_download_id']}",
-                                      created_time=f"{found_immunespace_download['date_created']}", mime_type="application/zip",
-                                      contents=[Contents(name="geneBySampleMatrix", drs_uri=f"http://localhost:{os.getenv('API_PORT')}/data/{object_id}/geneBySampleMatrix")])
+    if found_immunespace_download is not None:
+        content_files = ["geneBySampleMatrix", "phenoDataMatrix"]
+        contents = list(map(lambda x: Contents(id=x, name=x, drs_uri=f"http://localhost:{os.getenv('API_PORT')}/data/{object_id}/{x}"), content_files))
 
-    # id: str = "string"
-    # name: str = "string"
-    # self_uri: str = "drs://drs.example.org/314159"
-    # size: int = 0
-    # created_time: str = "2022-02-04T05:28:01.648Z"
-    # updated_time: str = "2022-02-04T05:28:01.648Z"
-    # version: str = "string"
-    # mime_type: str = "application/json"
-    # checksums: List[Checksums] = [
-    #     {
-    #         "checksum": "string",
-    #         "type": "sha-256"
-    #     }
-    # ]
-    # access_methods: List[AccessMethods] = [
-    #     {
-    #         "type": "s3",
-    #         "access_url": {
-    #             "url": "string",
-    #             "headers": "Authorization: Basic Z2E0Z2g6ZHJz"
-    #         },
-    #         "access_id": "string",
-    #         "region": "us-east-1"
-    #     }
-    # ]
-    # contents: List[Contents] = [
-    #     {
-    #         "name": "string",
-    #         "id": "string",
-    #         "drs_uri": "drs://drs.example.org/314159",
-    #         "contents": [
-    #             "string"
-    #         ]
-    #     }
-    # ]
-    # description: str = "string"
-    # aliases: List[str] = ["string"]
-    return ret.dict()
+        ret = ImmunespaceGA4GHDRSResponse(id=found_immunespace_download['immunespace_download_id'],
+                                          name=found_immunespace_download['immunespace_download_id'],
+                                          self_uri=f"http://localhost:{os.getenv('API_PORT')}/data/{found_immunespace_download['immunespace_download_id']}",
+                                          created_time=f"{found_immunespace_download['date_created']}", mime_type="application/zip",
+                                          contents=contents)
+        return ret.__dict__
+    else:
+        return HTTPException(status_code=404, detail="Not found")
 
 
 # xxx add value for passport example that doesn't cause server error
@@ -221,7 +187,7 @@ async def search(email: str):
     if len(ret) > 0:
         return ret
     else:
-        return {"None Found"}
+        return HTTPException(status_code=404, detail="Not found")
 
 
 @app.get("/status/{immunespace_download_id}")
