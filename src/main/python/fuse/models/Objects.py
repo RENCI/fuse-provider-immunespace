@@ -1,5 +1,5 @@
 import inspect
-from typing import Type, List, Any
+from typing import Type, List, Any, Optional
 
 from fastapi import Form
 from pydantic import BaseModel
@@ -25,6 +25,7 @@ def as_form(cls: Type[BaseModel]):
     return cls
 
 
+@as_form
 class PluginParameter(BaseModel):
     id: str
     title: str
@@ -34,6 +35,7 @@ class PluginParameter(BaseModel):
     format: str
 
 
+@as_form
 class SampleVariable(BaseModel):
     id: str = "FUSE:ExampleId"
     title: str = "Demo sampleVariable"
@@ -42,41 +44,41 @@ class SampleVariable(BaseModel):
     default: str = "example default value"
 
 
-class Checksums(BaseModel):
-    checksum: str
-    type: str
+class Checksums:
+    def __init__(self, checksum: str, type: str):
+        self.checksum = checksum
+        self.type = type
 
 
-class AccessURL(BaseModel):
-    url: str = "string"
-    headers: str = "Authorization: Basic Z2E0Z2g6ZHJz"
+# access_url: AccessURL = {
+#     "url": "string",
+#     "headers": "Authorization: Basic Z2E0Z2g6ZHJz"
+# }
+class AccessURL:
+    def __init__(self, url: str, headers: str):
+        self.url = url
+        self.headers = headers
 
 
-class AccessMethods(BaseModel):
-    type: str = "s3"
-    access_url: AccessURL = {
-        "url": "string",
-        "headers": "Authorization: Basic Z2E0Z2g6ZHJz"
-    }
-    access_id: str = "string"
-    region: str = "us-east-1"
+class AccessMethods:
+    def __init__(self, type: str, access_id: str, region: str):
+        self.type = type
+        self.access_id = access_id
+        self.region = region
 
 
-class Contents(BaseModel):
-
-    def __init__(self, id: str = None, name: str = None, drs_uri: str = None, contents: list = None, **data: Any):
-        super().__init__(**data)
+class Contents:
+    def __init__(self, id: str, name: str, drs_uri: str, contents: Optional[list[str]] = None):
         self.id = id
         self.name = name
         self.drs_uri = drs_uri
         self.contents = contents
 
 
-@as_form
-class ImmunespaceGA4GHDRSResponse(BaseModel):
-    def __init__(self, id: str = None, name: str = None, description: str = None, self_uri: str = None, size: int = 0, created_time: str = None, updated_time: str = None,
-                 version: str = None, mime_type: str = None, aliases: list = None, checksums: list = None, access_methods: list = None, contents: list = None, **data: Any):
-        super().__init__(**data)
+class ImmunespaceGA4GHDRSResponse:
+    def __init__(self, id: str, name: str, self_uri: str, created_time: str, mime_type: str, description: Optional[str] = None, size: Optional[int] = 0,
+                 updated_time: Optional[str] = None, version: Optional[str] = None, aliases: Optional[list[str]] = None, checksums: Optional[list[Checksums]] = None,
+                 access_methods: Optional[list[AccessMethods]] = None, contents: Optional[list[Contents]] = None):
         self.id = id
         self.name = name
         self.description = description
@@ -90,7 +92,6 @@ class ImmunespaceGA4GHDRSResponse(BaseModel):
         self.checksums = checksums
         self.access_methods = access_methods
         self.contents = contents
-
 
 @as_form
 class Passports(BaseModel):
