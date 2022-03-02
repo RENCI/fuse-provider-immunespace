@@ -95,7 +95,7 @@ prove -v  :: --verbose
 
 Run Python test:
 ```shell
-(export $(xargs < .env); pytest -s)
+(export $(xargs < .env); pytest -sx)
 ```
 
 ## stop
