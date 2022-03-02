@@ -1,7 +1,7 @@
 import os
+import time
 
 import requests
-import time
 
 
 def test_service_info():
@@ -19,7 +19,7 @@ def test_submit():
     status_code = r.status_code
     response_json = r.json()
     assert status_code == 200 and response_json["immunespace_download_id"] is not None
-    time.sleep(15) # to allow the service to run
+    time.sleep(15)  # to allow the service to run
 
 
 def test_search():
@@ -38,6 +38,19 @@ def test_status():
     status_code = r.status_code
     response_json = r.json()
     assert status_code == 200 and response_json is not None and response_json["status"] != "failed"
+
+
+def test_objects_get():
+    immunespace_download_id = test_search()
+    url = f"http://localhost:{os.getenv('API_PORT')}/objects/{immunespace_download_id}"
+    r = requests.get(url=url, headers={'accept': 'application/json'})
+    status_code = r.status_code
+    response_json = r.json()
+    content_files = ["geneBySampleMatrix", "phenoDataMatrix"]
+    assert status_code == 200 and response_json is not None
+    assert response_json["id"] == f"{immunespace_download_id}"
+    assert response_json["contents"] is not None
+    assert content_files.__contains__(response_json["contents"][0]["id"])
 
 
 def test_download_files():
