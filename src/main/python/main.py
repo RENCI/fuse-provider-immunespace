@@ -104,18 +104,17 @@ async def objects(object_id: str = Path(default="", description="DrsObject ident
     projection = {"_id": 0, "immunespace_download_id": 1, "email": 1, "group_id": 1, "apikey": 1, "status": 1, "date_created": 1, "start_date": 1, "end_date": 1}
     query = {"immunespace_download_id": object_id}
     found_immunespace_download = mongo_db_immunespace_downloads_column.find_one(query, projection)
-    logger.info(f"{found_immunespace_download}")
-
     if found_immunespace_download is not None:
+        logger.info(f"{found_immunespace_download}")
         content_files = ["geneBySampleMatrix", "phenoDataMatrix"]
-        contents = list(map(lambda x: Contents(id=x, name=x, drs_uri=f"http://localhost:{os.getenv('API_PORT')}/data/{object_id}/{x}"), content_files))
-
+        contents = list(map(lambda x: Contents(id=x, name=x, drs_uri=f"http://localhost:{os.getenv('API_PORT')}/files/{object_id}/{x}"), content_files))
+        # contents.append(Contents(id="archive", name="archive", drs_uri=f"http://localhost:{os.getenv('API_PORT')}/archive/{object_id}"))
         ret = ImmunespaceGA4GHDRSResponse(id=found_immunespace_download['immunespace_download_id'],
                                           name=found_immunespace_download['immunespace_download_id'],
-                                          self_uri=f"http://localhost:{os.getenv('API_PORT')}/data/{found_immunespace_download['immunespace_download_id']}",
+                                          self_uri=f"http://localhost:{os.getenv('API_PORT')}/objects/{found_immunespace_download['immunespace_download_id']}",
                                           created_time=f"{found_immunespace_download['date_created']}", mime_type="application/zip",
                                           contents=contents)
-        return ret.__dict__
+        return json.dumps(ret)
     else:
         return HTTPException(status_code=404, detail="Not found")
 
@@ -134,11 +133,12 @@ async def post_objects(object_id: str = Path(default="", description="DrsObject 
     GA4GH Passport sent in the formData in order to authorize access.
     '''
 
-    ret = {
-        "url": f"http://localhost:{os.getenv('API_PORT')}/data/{object_id}",
-        "headers": "Authorization: None"
-    }
-    return ret
+    # ret = {
+    #     "url": f"http://localhost:{os.getenv('API_PORT')}/data/{object_id}",
+    #     "headers": "Authorization: None"
+    # }
+    # return ret
+    return HTTPException(status_code=501, detail="Not implemented")
 
 
 @app.get("/objects/{object_id}/access/{access_id}", summary="Get a URL for fetching bytes")
@@ -151,10 +151,11 @@ async def get_objects(object_id: str = Path(default="", description="DrsObject i
     use signed URLs for fetching object bytes).
     '''
 
-    return {
-        "url": "http://localhost/object.zip",
-        "headers": "Authorization: None"
-    }
+    # return {
+    #     "url": "http://localhost/object.zip",
+    #     "headers": "Authorization: None"
+    # }
+    return HTTPException(status_code=501, detail="Not implemented")
 
 
 # xxx figure out how to add the following description to 'passports':
@@ -172,10 +173,11 @@ async def post_objects(object_id: str = Path(default="", description="DrsObject 
     authorize access.
 
     '''
-    return {
-        "url": "http://localhost/object.zip",
-        "headers": "Authorization: None"
-    }
+    # return {
+    #     "url": "http://localhost/object.zip",
+    #     "headers": "Authorization: None"
+    # }
+    return HTTPException(status_code=501, detail="Not implemented")
 
 
 @app.get("/search/{email}")
@@ -191,15 +193,21 @@ async def search(email: str):
 
 
 @app.get("/status/{immunespace_download_id}")
-def status(immunespace_download_id: str):
+async def status(immunespace_download_id: str):
+    task_mapping_entry = {"immunespace_download_id": immunespace_download_id}
     try:
-        job = Job.fetch(immunespace_download_id, connection=redis_connection)
-        ret = {"status": job.get_status()}
-        task_mapping_entry = {"immunespace_download_id": immunespace_download_id}
-        new_values = {"$set": ret}
-        mongo_db_immunespace_downloads_column.update_one(task_mapping_entry, new_values)
-        return ret
-    except:
+        if Job.exists(immunespace_download_id, redis_connection):
+            job = Job.fetch(immunespace_download_id, redis_connection)
+            ret = {"status": job.get_status()}
+            new_values = {"$set": ret}
+            mongo_db_immunespace_downloads_column.update_one(task_mapping_entry, new_values)
+            return ret
+        else:
+            projection = {"_id": 0, "immunespace_download_id": 1, "email": 1, "group_id": 1, "apikey": 1, "status": 1, "date_created": 1, "start_date": 1, "end_date": 1}
+            found_immunespace_download = mongo_db_immunespace_downloads_column.find_one(task_mapping_entry, projection)
+            return {"status": found_immunespace_download['status']}
+    except Exception as e:
+        logger.info(msg=f"Problem looking up status: {e}")
         raise HTTPException(status_code=404, detail="Not found")
 
 
@@ -242,55 +250,40 @@ async def submit(email: str, group: str, apikey: str):
 
 
 def run_immunespace_download(immunespace_download_id: str, group: str, apikey: str):
-    local_path = os.getenv('HOST_ABSOLUTE_PATH')
-
-    job = Job.fetch(immunespace_download_id, connection=redis_connection)
     task_mapping_entry = {"immunespace_download_id": immunespace_download_id}
-    new_values = {"$set": {"start_date": datetime.datetime.utcnow(), "status": job.get_status()}}
-    mongo_db_immunespace_downloads_column.update_one(task_mapping_entry, new_values)
+    try:
+        local_path = os.getenv('HOST_ABSOLUTE_PATH')
 
-    image = "txscience/tx-immunespace-groups:0.3"
-    volumes = {os.path.join(local_path, f"data/{immunespace_download_id}-immunespace-data"): {'bind': '/data', 'mode': 'rw'}}
-    command = f"-g \"{group}\" -a \"{apikey}\" -o /data"
-    immunespace_groups_container_logs = docker_client.containers.run(image, volumes=volumes, name=f"{immunespace_download_id}-immunespace-groups", working_dir="/data",
-                                                                     privileged=True, remove=True, command=command)
-    logger.info(msg=immunespace_groups_container_logs)
-    logger.info(msg=f"finished txscience/tx-immunespace-groups:0.3")
+        job = Job.fetch(immunespace_download_id, connection=redis_connection)
+        new_values = {"$set": {"start_date": datetime.datetime.utcnow(), "status": job.get_status()}}
+        mongo_db_immunespace_downloads_column.update_one(task_mapping_entry, new_values)
 
-    image = "txscience/fuse-mapper-immunespace:0.1"
-    volumes = {os.path.join(local_path, f"data/{immunespace_download_id}-immunespace-data"): {'bind': '/data', 'mode': 'rw'}}
-    command = f"-g /data/geneBySampleMatrix.csv -p /data/phenoDataMatrix.csv"
-    mapper_container_logs = docker_client.containers.run(image, volumes=volumes, name=f"{immunespace_download_id}-immunespace-mapper", working_dir="/data", privileged=True,
-                                                         remove=True, command=command)
-    logger.info(msg=mapper_container_logs)
-    logger.info(msg=f"finished fuse-mapper-immunespace:0.1")
+        image = "txscience/tx-immunespace-groups:0.3"
+        volumes = {os.path.join(local_path, f"data/{immunespace_download_id}-immunespace-data"): {'bind': '/data', 'mode': 'rw'}}
+        command = f"-g \"{group}\" -a \"{apikey}\" -o /data"
+        immunespace_groups_container_logs = docker_client.containers.run(image, volumes=volumes, name=f"{immunespace_download_id}-immunespace-groups", working_dir="/data",
+                                                                         privileged=True, remove=True, command=command)
 
-    new_values = {"$set": {"end_date": datetime.datetime.utcnow(), "status": job.get_status()}}
-    mongo_db_immunespace_downloads_column.update_one(task_mapping_entry, new_values)
+        immunespace_groups_container_logs_decoded = immunespace_groups_container_logs.decode("utf8")
+        logger.info(msg=immunespace_groups_container_logs_decoded)
+        logger.info(msg=f"finished txscience/tx-immunespace-groups:0.3")
+        if immunespace_groups_container_logs_decoded.__contains__("returned non-zero exit status"):
+            raise Exception("There was a problem running the txscience/tx-immunespace-groups container")
 
+        image = "txscience/fuse-mapper-immunespace:0.1"
+        volumes = {os.path.join(local_path, f"data/{immunespace_download_id}-immunespace-data"): {'bind': '/data', 'mode': 'rw'}}
+        command = f"-g /data/geneBySampleMatrix.csv -p /data/phenoDataMatrix.csv"
+        mapper_container_logs = docker_client.containers.run(image, volumes=volumes, name=f"{immunespace_download_id}-immunespace-mapper", working_dir="/data", privileged=True,
+                                                             remove=True, command=command)
+        logger.info(msg=mapper_container_logs)
+        logger.info(msg=f"finished fuse-mapper-immunespace:0.1")
 
-@app.get("/files/{immunespace_download_id}")
-def files(immunespace_download_id: str):
-    local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "/app/data")
-    dir_path = os.path.join(local_path, f"{immunespace_download_id}-immunespace-data")
-    zip_file = os.path.join(dir_path, "data.zip")
-    zipf = zipfile.ZipFile(zip_file, 'w', zipfile.ZIP_DEFLATED)
-    zipf.write(os.path.join(dir_path, "geneBySampleMatrix.csv"), "geneBySampleMatrix.csv")
-    zipf.write(os.path.join(dir_path, "phenoDataMatrix.csv"), "phenoDataMatrix.csv")
-    zipf.close()
-    if not os.path.isdir(dir_path) or not os.path.exists(zip_file):
-        raise HTTPException(status_code=404, detail="Not found")
-
-    def iterfile():
-        try:
-            with open(zip_file, mode="rb") as file_data:
-                yield from file_data
-        except:
-            raise Exception()
-
-    response = StreamingResponse(iterfile(), media_type="application/zip")
-    response.headers["Content-Disposition"] = "attachment; filename=data.zip"
-    return response
+        new_values = {"$set": {"end_date": datetime.datetime.utcnow(), "status": job.get_status()}}
+        mongo_db_immunespace_downloads_column.update_one(task_mapping_entry, new_values)
+    except Exception as e:
+        new_values = {"$set": {"end_date": datetime.datetime.utcnow(), "status": "failed"}}
+        mongo_db_immunespace_downloads_column.update_one(task_mapping_entry, new_values)
+        logger.error(e)
 
 
 @app.get("/files/{immunespace_download_id}/{file_name}")
@@ -335,11 +328,11 @@ async def immunespace_download_delete(immunespace_download_id: str):
     ret_job = ""
     ret_job_err = ""
     try:
-        job = Job.fetch(immunespace_download_id, connection=redis_connection)
-        if job is None:
-            ret_job = "No job found in queue.\n"
-        else:
+        if Job.exists(immunespace_download_id, redis_connection):
+            job = Job.fetch(immunespace_download_id, connection=redis_connection)
             job.delete(delete_dependents=True, remove_from_queue=True)
+        else:
+            logger.warning(f"Job doesn't exist: {immunespace_download_id}")
     except Exception as e:
         # job is not expected to be on queue so don't change deleted_status from "done"
         ret_job_err += f"! Exception {type(e)} occurred while deleting job from redis queue, message=[{e}] \n! traceback=\n{traceback.format_exc()}\n"
