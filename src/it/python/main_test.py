@@ -9,7 +9,8 @@ def test_service_info():
     r = requests.get(url=url, headers={'accept': 'application/json'})
     status_code = r.status_code
     response_json = r.json()
-    assert status_code == 200 and response_json is not None and response_json["id"] == "fuse-provider-immunespace"
+    assert status_code == 200 and response_json is not None
+    assert response_json["id"] == "fuse-provider-immunespace"
 
 
 def test_submit():
@@ -18,8 +19,8 @@ def test_submit():
     r = requests.post(url=url, params=params, headers={'accept': 'application/json'})
     status_code = r.status_code
     response_json = r.json()
-    assert status_code == 200 and response_json["immunespace_download_id"] is not None
-    time.sleep(15)  # to allow the service to run
+    assert status_code == 200 and response_json is not None
+    assert response_json["immunespace_download_id"] is not None
 
 
 def test_search():
@@ -27,8 +28,10 @@ def test_search():
     r = requests.get(url=url, headers={'accept': 'application/json'})
     status_code = r.status_code
     response_json = r.json()
-    assert status_code == 200 and response_json is not None and response_json[0]["immunespace_download_id"] is not None and response_json[0]["email"] == "jdr0887@gmail.com"
-    return response_json[0]["immunespace_download_id"]
+    assert status_code == 200 and response_json is not None
+    first = response_json[0]
+    assert first["immunespace_download_id"] is not None and first["email"] == "jdr0887@gmail.com"
+    return first["immunespace_download_id"]
 
 
 def test_status():
@@ -37,29 +40,42 @@ def test_status():
     r = requests.get(url=url, headers={'accept': 'application/json'})
     status_code = r.status_code
     response_json = r.json()
-    assert status_code == 200 and response_json is not None and response_json["status"] != "failed"
+    assert status_code == 200 and response_json is not None
+    assert response_json["status"] != "failed"
+    return response_json["status"]
 
 
 def test_objects_get():
+    content_files = ["geneBySampleMatrix", "phenoDataMatrix"]
     immunespace_download_id = test_search()
+
+    attempt = 1
+    backoff = 10
+    run_test = False
+    while True:
+        if attempt > 4:
+            break
+        url = f"http://localhost:{os.getenv('API_PORT')}/status/{immunespace_download_id}"
+        status_response = requests.get(url=url, headers={'accept': 'application/json'}).json()
+        status = status_response["status"]
+        if status == "finished":
+            run_test = True
+            break
+        print(f"attempt: {attempt}, backoff: {backoff}, status: {status}")
+        time.sleep(backoff)
+        attempt += 1
+        backoff *= 2
+
+    assert run_test
+
     url = f"http://localhost:{os.getenv('API_PORT')}/objects/{immunespace_download_id}"
     r = requests.get(url=url, headers={'accept': 'application/json'})
     status_code = r.status_code
     response_json = r.json()
-    content_files = ["geneBySampleMatrix", "phenoDataMatrix"]
     assert status_code == 200 and response_json is not None
     assert response_json["id"] == f"{immunespace_download_id}"
     assert response_json["contents"] is not None
     assert content_files.__contains__(response_json["contents"][0]["id"])
-
-
-def test_download_files():
-    immunespace_download_id = test_search()
-    url = f"http://localhost:{os.getenv('API_PORT')}/files/{immunespace_download_id}"
-    r = requests.get(url=url, headers={'accept': 'application/json'})
-    status_code = r.status_code
-    content_type = r.headers.get('content-type')
-    assert status_code == 200 and content_type == "application/zip"
 
 
 def test_download_file():
@@ -77,4 +93,5 @@ def test_delete():
     r = requests.delete(url=url, headers={'accept': 'application/json'})
     status_code = r.status_code
     response_json = r.json()
-    assert status_code == 200 and response_json["status"] == "deleted"
+    assert status_code == 200 and response_json is not None
+    assert response_json["status"] == "deleted"
