@@ -27,12 +27,15 @@ services:
 
   fuse-provider-immunespace:
     container_name: fuse-provider-immunespace
-    build: .
+    build:
+      context: .
+      args:
+        - API_PORT=${API_PORT}
     restart: always
     env_file:
       - .env
     ports:
-        - "${API_PORT}:8000"
+        - "${API_PORT}:${API_PORT}"
     volumes:
         - /var/run/docker.sock:/var/run/docker.sock
         - ./data:/app/data
