@@ -93,6 +93,7 @@ class ImmunespaceGA4GHDRSResponse:
         self.access_methods = access_methods
         self.contents = contents
 
+
 @as_form
 class Passports(BaseModel):
     expand: bool = False
