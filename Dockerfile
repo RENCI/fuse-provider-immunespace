@@ -1,6 +1,6 @@
 FROM python:3.9-buster
 
-EXPOSE 8000
+EXPOSE 8085
 
 COPY ./requirements.txt /app/requirements.txt
 
@@ -18,4 +18,4 @@ COPY . /app
 
 WORKDIR /app/src/main/python
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "debug" ]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8085", "--log-level", "debug" ]
