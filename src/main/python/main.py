@@ -114,7 +114,7 @@ async def objects(object_id: str = Path(default="", description="DrsObject ident
                                           self_uri=f"http://localhost:{os.getenv('API_PORT')}/objects/{found_immunespace_download['immunespace_download_id']}",
                                           created_time=f"{found_immunespace_download['date_created']}", mime_type="application/zip",
                                           contents=contents)
-        return json.dumps(ret)
+        return ret.__dict__
     else:
         return HTTPException(status_code=404, detail="Not found")
 
@@ -278,7 +278,7 @@ def run_immunespace_download(immunespace_download_id: str, group: str, apikey: s
         logger.info(msg=mapper_container_logs)
         logger.info(msg=f"finished fuse-mapper-immunespace:0.1")
 
-        new_values = {"$set": {"end_date": datetime.datetime.utcnow(), "status": job.get_status()}}
+        new_values = {"$set": {"end_date": datetime.datetime.utcnow(), "status": "finished"}}
         mongo_db_immunespace_downloads_column.update_one(task_mapping_entry, new_values)
     except Exception as e:
         new_values = {"$set": {"end_date": datetime.datetime.utcnow(), "status": "failed"}}
