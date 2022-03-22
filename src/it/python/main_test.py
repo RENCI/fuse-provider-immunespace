@@ -15,12 +15,12 @@ def test_service_info():
 
 def test_submit():
     url = f"http://localhost:{os.getenv('API_PORT')}/submit"
-    params = {'email': 'jdr0887@gmail.com', 'group': 'asdf', 'apikey': 'apikey|5d2f826c452af1849b3f106630fef50a'}
+    params = {'submitter_id': 'jdr0887@gmail.com', 'accession_id': 'asdf', 'apikey': 'apikey|5d2f826c452af1849b3f106630fef50a'}
     r = requests.post(url=url, params=params, headers={'accept': 'application/json'})
     status_code = r.status_code
     response_json = r.json()
     assert status_code == 200 and response_json is not None
-    assert response_json["immunespace_download_id"] is not None
+    assert response_json["object_id"] is not None
 
 
 def test_search():
