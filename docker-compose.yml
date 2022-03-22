@@ -10,6 +10,8 @@ services:
     expose:
       - 6379
     command: [ "--appendonly", "yes" ]
+    networks:
+      - immunespace_network
 
   immunespace-mongodb:
     container_name: immunespace-mongodb
@@ -24,13 +26,12 @@ services:
       - 27017
       - 27018
       - 27019
+    networks:
+      - immunespace_network
 
   fuse-provider-immunespace:
     container_name: fuse-provider-immunespace
-    build:
-      context: .
-      args:
-        - API_PORT=${API_PORT}
+    build: .
     restart: always
     env_file:
       - .env
@@ -41,9 +42,17 @@ services:
         - ./data:/app/data
     expose:
       - ${API_PORT}
+    networks:
+      - immunespace_network
     depends_on:
       - immunespace-redis
       - immunespace-mongodb
 
+networks:
+  immunespace_network:
+    name: fuse
+    external: true
+
 volumes:
   mongodb_data_container:
+
