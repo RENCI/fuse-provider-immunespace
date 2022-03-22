@@ -6,7 +6,6 @@ import pathlib
 import shutil
 import traceback
 import uuid
-import zipfile
 from multiprocessing import Process
 
 import docker
@@ -18,6 +17,7 @@ from rq import Queue, Worker
 from rq.job import Job
 from starlette.responses import StreamingResponse
 
+# https://developer.mozilla.org/en-US/docs/Web/API/WritableStream
 from fuse.models.Objects import Passports, ImmunespaceGA4GHDRSResponse, Contents
 
 app = FastAPI()
@@ -101,7 +101,7 @@ async def service_info():
 async def objects(object_id: str = Path(default="", description="DrsObject identifier"),
                   expand: bool = Query(default=False,
                                        description="If false and the object_id refers to a bundle, then the ContentsObject array contains only those objects directly contained in the bundle. That is, if the bundle contains other bundles, those other bundles are not recursively included in the result. If true and the object_id refers to a bundle, then the entire set of objects in the bundle is expanded. That is, if the bundle contains aother bundles, then those other bundles are recursively expanded and included in the result. Recursion continues through the entire sub-tree of the bundle. If the object_id refers to a blob, then the query parameter is ignored.")):
-    projection = {"_id": 0, "immunespace_download_id": 1, "email": 1, "group_id": 1, "apikey": 1, "status": 1, "date_created": 1, "start_date": 1, "end_date": 1}
+    projection = {"_id": 0, "immunespace_download_id": 1, "submitter_id": 1, "accession_id": 1, "apikey": 1, "status": 1, "date_created": 1, "start_date": 1, "end_date": 1}
     query = {"immunespace_download_id": object_id}
     found_immunespace_download = mongo_db_immunespace_downloads_column.find_one(query, projection)
     if found_immunespace_download is not None:
@@ -180,10 +180,10 @@ async def post_objects(object_id: str = Path(default="", description="DrsObject 
     return HTTPException(status_code=501, detail="Not implemented")
 
 
-@app.get("/search/{email}")
-async def search(email: str):
-    query = {"email": email}
-    projection = {"_id": 0, "immunespace_download_id": 1, "email": 1, "group_id": 1, "apikey": 1, "status": 1, "date_created": 1, "start_date": 1, "end_date": 1}
+@app.get("/search/{submitter_id}")
+async def search(submitter_id: str):
+    query = {"submitter_id": submitter_id}
+    projection = {"_id": 0, "immunespace_download_id": 1, "submitter_id": 1, "accession_id": 1, "apikey": 1, "status": 1, "date_created": 1, "start_date": 1, "end_date": 1}
     # projection = {"_id": 0, "immunespace_download_id": 1}
     ret = list(map(lambda a: a, mongo_db_immunespace_downloads_column.find(query, projection)))
     if len(ret) > 0:
@@ -203,7 +203,7 @@ async def status(immunespace_download_id: str):
             mongo_db_immunespace_downloads_column.update_one(task_mapping_entry, new_values)
             return ret
         else:
-            projection = {"_id": 0, "immunespace_download_id": 1, "email": 1, "group_id": 1, "apikey": 1, "status": 1, "date_created": 1, "start_date": 1, "end_date": 1}
+            projection = {"_id": 0, "immunespace_download_id": 1, "submitter_id": 1, "accession_id": 1, "apikey": 1, "status": 1, "date_created": 1, "start_date": 1, "end_date": 1}
             found_immunespace_download = mongo_db_immunespace_downloads_column.find_one(task_mapping_entry, projection)
             return {"status": found_immunespace_download['status']}
     except Exception as e:
@@ -212,61 +212,51 @@ async def status(immunespace_download_id: str):
 
 
 @app.post("/submit")
-async def submit(email: str, group: str, apikey: str):
-    # write data to memory
-    immunespace_download_query = {"email": email, "group_id": group, "apikey": apikey}
-    projection = {"_id": 0, "immunespace_download_id": 1, "email": 1, "group_id": 1, "apikey": 1, "status": 1, "date_created": 1, "start_date": 1, "end_date": 1}
+def submit(submitter_id: str, accession_id: str, apikey: str):
+
+    immunespace_download_query = {"submitter_id": submitter_id, "accession_id": accession_id, "apikey": apikey}
+    projection = {"_id": 0, "immunespace_download_id": 1, "submitter_id": 1, "accession_id": 1, "apikey": 1, "status": 1, "date_created": 1, "start_date": 1, "end_date": 1}
     entry = mongo_db_immunespace_downloads_column.find(immunespace_download_query, projection)
 
     local_path = os.path.join("/app/data")
 
     if entry.count() > 0:
         immunespace_download_id = entry.next()["immunespace_download_id"]
-
         local_path = os.path.join(local_path, f"{immunespace_download_id}-immunespace-data")
-        if os.path.exists(local_path) and len(os.listdir(local_path)) == 0:
-            q.enqueue(run_immunespace_download, immunespace_download_id=immunespace_download_id, group=group, apikey=apikey, job_id=immunespace_download_id, job_timeout=3600,
-                      result_ttl=-1)
-            p_worker = Process(target=init_worker)
-            p_worker.start()
 
-        return {"immunespace_download_id": immunespace_download_id}
+        if os.path.exists(local_path) and len(os.listdir(local_path)) == 0:
+            run_immunespace_download(immunespace_download_id, accession_id=accession_id, apikey=apikey)
+        return {"object_id": immunespace_download_id}
     else:
         immunespace_download_id = str(uuid.uuid4())[:8]
-
-        task_mapping_entry = {"immunespace_download_id": immunespace_download_id, "email": email, "group_id": group, "apikey": apikey, "status": None,
-                              "date_created": datetime.datetime.utcnow(), "start_date": None, "end_date": None}
-        mongo_db_immunespace_downloads_column.insert_one(task_mapping_entry)
-
         local_path = os.path.join(local_path, f"{immunespace_download_id}-immunespace-data")
         os.mkdir(local_path)
 
-        # instantiate task
-        q.enqueue(run_immunespace_download, immunespace_download_id=immunespace_download_id, group=group, apikey=apikey, job_id=immunespace_download_id, job_timeout=3600,
-                  result_ttl=-1)
-        p_worker = Process(target=init_worker)
-        p_worker.start()
-        return {"immunespace_download_id": immunespace_download_id}
+        task_mapping_entry = {"immunespace_download_id": immunespace_download_id, "submitter_id": submitter_id, "accession_id": accession_id, "apikey": apikey, "status": "queued",
+                              "date_created": datetime.datetime.utcnow(), "start_date": None, "end_date": None}
+        mongo_db_immunespace_downloads_column.insert_one(task_mapping_entry)
+
+        run_immunespace_download(immunespace_download_id, accession_id=accession_id, apikey=apikey)
+        return {"object_id": immunespace_download_id}
 
 
-def run_immunespace_download(immunespace_download_id: str, group: str, apikey: str):
+def run_immunespace_download(immunespace_download_id: str, accession_id: str, apikey: str):
     task_mapping_entry = {"immunespace_download_id": immunespace_download_id}
     try:
         local_path = os.getenv('HOST_ABSOLUTE_PATH')
 
-        job = Job.fetch(immunespace_download_id, connection=redis_connection)
-        new_values = {"$set": {"start_date": datetime.datetime.utcnow(), "status": job.get_status()}}
+        new_values = {"$set": {"start_date": datetime.datetime.utcnow(), "status": "running"}}
         mongo_db_immunespace_downloads_column.update_one(task_mapping_entry, new_values)
 
         image = "txscience/tx-immunespace-groups:0.3"
         volumes = {os.path.join(local_path, f"data/{immunespace_download_id}-immunespace-data"): {'bind': '/data', 'mode': 'rw'}}
-        command = f"-g \"{group}\" -a \"{apikey}\" -o /data"
+        command = f"-g \"{accession_id}\" -a \"{apikey}\" -o /data"
         immunespace_groups_container_logs = docker_client.containers.run(image, volumes=volumes, name=f"{immunespace_download_id}-immunespace-groups", working_dir="/data",
                                                                          privileged=True, remove=True, command=command)
 
         immunespace_groups_container_logs_decoded = immunespace_groups_container_logs.decode("utf8")
-        logger.info(msg=immunespace_groups_container_logs_decoded)
         logger.info(msg=f"finished txscience/tx-immunespace-groups:0.3")
+        logger.debug(msg=f"immunespace_groups_container_logs: {immunespace_groups_container_logs_decoded}")
         if immunespace_groups_container_logs_decoded.__contains__("returned non-zero exit status"):
             raise Exception("There was a problem running the txscience/tx-immunespace-groups container")
 
@@ -275,8 +265,8 @@ def run_immunespace_download(immunespace_download_id: str, group: str, apikey: s
         command = f"-g /data/geneBySampleMatrix.csv -p /data/phenoDataMatrix.csv"
         mapper_container_logs = docker_client.containers.run(image, volumes=volumes, name=f"{immunespace_download_id}-immunespace-mapper", working_dir="/data", privileged=True,
                                                              remove=True, command=command)
-        logger.info(msg=mapper_container_logs)
         logger.info(msg=f"finished fuse-mapper-immunespace:0.1")
+        logger.debug(msg=f"mapper_container_logs: {mapper_container_logs}")
 
         new_values = {"$set": {"end_date": datetime.datetime.utcnow(), "status": "finished"}}
         mongo_db_immunespace_downloads_column.update_one(task_mapping_entry, new_values)
