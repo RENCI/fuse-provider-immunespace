@@ -1,8 +1,9 @@
 import inspect
-from typing import Type, List, Any, Optional
+from typing import Type, List, Optional, Any
 
 from fastapi import Form
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from pydantic.networks import EmailStr
 
 
 def as_form(cls: Type[BaseModel]):
@@ -44,8 +45,9 @@ class SampleVariable(BaseModel):
     default: str = "example default value"
 
 
-class Checksums:
-    def __init__(self, checksum: str, type: str):
+class Checksums(BaseModel):
+    def __init__(self, checksum: str, type: str, **data: Any):
+        super().__init__(**data)
         self.checksum = checksum
         self.type = type
 
@@ -98,3 +100,19 @@ class ImmunespaceGA4GHDRSResponse:
 class Passports(BaseModel):
     expand: bool = False
     passports: List[str] = ["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJnYTRnaF9wYXNzcG9ydF92MSI6W119.JJ5rN0ktP0qwyZmIPpxmF_p7JsxAZH6L6brUxtad3CM"]
+
+
+@as_form
+class ProviderParameters(BaseModel):
+    service_id: str = Field(..., title="Provider service id", description="id of service used to upload this object")
+    submitter_id: EmailStr = Field(..., title="email", description="unique submitter id (email)")
+    data_type: Optional[str] = Field(None, title="Data type of this object",
+                                     description="the type of data; options are: dataset-geneExpression, results-pca, results-cellularFunction. Not all types are supported by all providers")
+    description: Optional[str] = Field(None, title="Description", description="detailed description of this data (optional)")
+    version: Optional[str] = Field(None, title="Version of this object",
+                                   description="objects shouldn't ever be deleted unless data are redacted or there is a database consistency problem.")
+    accession_id: Optional[str] = Field(None, title="External accession ID", description="if sourced from a 3rd party, this is the accession ID on that db")
+    apikey: Optional[str] = Field(None, title="External apikey", description="if sourced from a 3rd party, this is the apikey used for retrieval")
+    aliases: Optional[str] = Field(None, title="Optional list of aliases for this object")
+    checksums: Optional[List[Checksums]] = Field(None, title="Optional checksums for the object",
+                                                 description="enables verification checking by clients; this is a json list of objects, each object contains 'checksum' and 'type' fields, where 'type' might be 'sha-256' for example.")
