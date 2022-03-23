@@ -34,40 +34,9 @@ def test_search():
     return first["immunespace_download_id"]
 
 
-def test_status():
-    immunespace_download_id = test_search()
-    url = f"http://localhost:{os.getenv('API_PORT')}/status/{immunespace_download_id}"
-    r = requests.get(url=url, headers={'accept': 'application/json'})
-    status_code = r.status_code
-    response_json = r.json()
-    assert status_code == 200 and response_json is not None
-    assert response_json["status"] != "failed"
-    return response_json["status"]
-
-
 def test_objects_get():
     content_files = ["geneBySampleMatrix", "phenoDataMatrix"]
     immunespace_download_id = test_search()
-
-    attempt = 1
-    backoff = 10
-    run_test = False
-    while True:
-        if attempt > 4:
-            break
-        url = f"http://localhost:{os.getenv('API_PORT')}/status/{immunespace_download_id}"
-        status_response = requests.get(url=url, headers={'accept': 'application/json'}).json()
-        status = status_response["status"]
-        if status == "finished":
-            run_test = True
-            break
-        print(f"attempt: {attempt}, backoff: {backoff}, status: {status}")
-        time.sleep(backoff)
-        attempt += 1
-        backoff *= 2
-
-    assert run_test
-
     url = f"http://localhost:{os.getenv('API_PORT')}/objects/{immunespace_download_id}"
     r = requests.get(url=url, headers={'accept': 'application/json'})
     status_code = r.status_code
