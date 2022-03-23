@@ -6,7 +6,6 @@ import pathlib
 import shutil
 import traceback
 import uuid
-from multiprocessing import Process
 
 import docker
 import pymongo
@@ -14,11 +13,10 @@ from fastapi import FastAPI, Depends, Path, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from redis import Redis
 from rq import Queue, Worker
-from rq.job import Job
 from starlette.responses import StreamingResponse
 
 # https://developer.mozilla.org/en-US/docs/Web/API/WritableStream
-from fuse.models.Objects import Passports, ImmunespaceGA4GHDRSResponse, Contents
+from fuse.models.Objects import Passports, ImmunespaceGA4GHDRSResponse, Contents, ProviderParameters
 
 app = FastAPI()
 
@@ -192,29 +190,9 @@ async def search(submitter_id: str):
         return HTTPException(status_code=404, detail="Not found")
 
 
-@app.get("/status/{immunespace_download_id}")
-async def status(immunespace_download_id: str):
-    task_mapping_entry = {"immunespace_download_id": immunespace_download_id}
-    try:
-        if Job.exists(immunespace_download_id, redis_connection):
-            job = Job.fetch(immunespace_download_id, redis_connection)
-            ret = {"status": job.get_status()}
-            new_values = {"$set": ret}
-            mongo_db_immunespace_downloads_column.update_one(task_mapping_entry, new_values)
-            return ret
-        else:
-            projection = {"_id": 0, "immunespace_download_id": 1, "submitter_id": 1, "accession_id": 1, "apikey": 1, "status": 1, "date_created": 1, "start_date": 1, "end_date": 1}
-            found_immunespace_download = mongo_db_immunespace_downloads_column.find_one(task_mapping_entry, projection)
-            return {"status": found_immunespace_download['status']}
-    except Exception as e:
-        logger.info(msg=f"Problem looking up status: {e}")
-        raise HTTPException(status_code=404, detail="Not found")
-
-
 @app.post("/submit")
-def submit(submitter_id: str, accession_id: str, apikey: str):
-
-    immunespace_download_query = {"submitter_id": submitter_id, "accession_id": accession_id, "apikey": apikey}
+def submit(parameters: ProviderParameters = Depends(ProviderParameters.as_form)):
+    immunespace_download_query = {"submitter_id": parameters.submitter_id, "accession_id": parameters.accession_id, "apikey": parameters.apikey}
     projection = {"_id": 0, "immunespace_download_id": 1, "submitter_id": 1, "accession_id": 1, "apikey": 1, "status": 1, "date_created": 1, "start_date": 1, "end_date": 1}
     entry = mongo_db_immunespace_downloads_column.find(immunespace_download_query, projection)
 
@@ -225,18 +203,18 @@ def submit(submitter_id: str, accession_id: str, apikey: str):
         local_path = os.path.join(local_path, f"{immunespace_download_id}-immunespace-data")
 
         if os.path.exists(local_path) and len(os.listdir(local_path)) == 0:
-            run_immunespace_download(immunespace_download_id, accession_id=accession_id, apikey=apikey)
+            run_immunespace_download(immunespace_download_id, accession_id=parameters.accession_id, apikey=parameters.apikey)
         return {"object_id": immunespace_download_id}
     else:
         immunespace_download_id = str(uuid.uuid4())[:8]
         local_path = os.path.join(local_path, f"{immunespace_download_id}-immunespace-data")
         os.mkdir(local_path)
 
-        task_mapping_entry = {"immunespace_download_id": immunespace_download_id, "submitter_id": submitter_id, "accession_id": accession_id, "apikey": apikey, "status": "queued",
-                              "date_created": datetime.datetime.utcnow(), "start_date": None, "end_date": None}
+        task_mapping_entry = {"immunespace_download_id": immunespace_download_id, "submitter_id": parameters.submitter_id, "accession_id": parameters.accession_id,
+                              "apikey": parameters.apikey, "status": "queued", "date_created": datetime.datetime.utcnow(), "start_date": None, "end_date": None}
         mongo_db_immunespace_downloads_column.insert_one(task_mapping_entry)
 
-        run_immunespace_download(immunespace_download_id, accession_id=accession_id, apikey=apikey)
+        run_immunespace_download(immunespace_download_id, accession_id=parameters.accession_id, apikey=parameters.apikey)
         return {"object_id": immunespace_download_id}
 
 
@@ -314,20 +292,6 @@ async def immunespace_download_delete(immunespace_download_id: str):
     '''
     delete_status = "done"
 
-    # Delete may be requested while the download job is enqueued, so check that first:
-    ret_job = ""
-    ret_job_err = ""
-    try:
-        if Job.exists(immunespace_download_id, redis_connection):
-            job = Job.fetch(immunespace_download_id, connection=redis_connection)
-            job.delete(delete_dependents=True, remove_from_queue=True)
-        else:
-            logger.warning(f"Job doesn't exist: {immunespace_download_id}")
-    except Exception as e:
-        # job is not expected to be on queue so don't change deleted_status from "done"
-        ret_job_err += f"! Exception {type(e)} occurred while deleting job from redis queue, message=[{e}] \n! traceback=\n{traceback.format_exc()}\n"
-        delete_status = "exception"
-
     # Assuming the job already executed, remove any database records
     ret_mongo = ""
     ret_mongo_err = ""
@@ -363,8 +327,8 @@ async def immunespace_download_delete(immunespace_download_id: str):
         ret_os_err += f"! Exception {type(e)} occurred while deleting job from filesystem, message=[{e}] \n! traceback=\n{traceback.format_exc()}\n"
         delete_status = "exception"
 
-    ret_message = ret_job + ret_mongo + ret_os
-    ret_err_message = ret_job_err + ret_mongo_err + ret_os_err
+    ret_message = ret_mongo + ret_os
+    ret_err_message = ret_mongo_err + ret_os_err
     return {
         "status": delete_status,
         "info": ret_message,
