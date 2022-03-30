@@ -77,23 +77,28 @@ class Contents:
         self.contents = contents
 
 
-class ImmunespaceGA4GHDRSResponse:
-    def __init__(self, id: str, name: str, self_uri: str, created_time: str, mime_type: str, description: Optional[str] = None, size: Optional[int] = 0,
-                 updated_time: Optional[str] = None, version: Optional[str] = None, aliases: Optional[list[str]] = None, checksums: Optional[list[Checksums]] = None,
-                 access_methods: Optional[list[AccessMethods]] = None, contents: Optional[list[Contents]] = None):
+class ImmunespaceProviderResponse:
+    def __init__(self, id: str, object_id: str, name: str, self_uri: str, created_time: str, mime_type: str, file_type: str, status: str, description: Optional[str] = None,
+                 size: Optional[int] = 0, updated_time: Optional[str] = None, version: Optional[str] = None, aliases: Optional[list[str]] = None, checksums: Optional[list[Checksums]] = None,
+                 access_methods: Optional[list[AccessMethods]] = None, contents: Optional[list[Contents]] = None, data_type: Optional[str] = None, stderr: Optional[str] = None):
         self.id = id
+        self.object_id = object_id
         self.name = name
+        self.mime_type = mime_type
+        self.data_type = data_type
+        self.file_type = file_type
+        self.status = status
         self.description = description
         self.self_uri = self_uri
         self.size = size
         self.created_time = created_time
         self.updated_time = updated_time
         self.version = version
-        self.mime_type = mime_type
         self.aliases = aliases
         self.checksums = checksums
         self.access_methods = access_methods
         self.contents = contents
+        self.stderr = stderr
 
 
 @as_form
@@ -108,6 +113,7 @@ class ProviderParameters(BaseModel):
     submitter_id: EmailStr = Field(..., title="email", description="unique submitter id (email)")
     data_type: Optional[str] = Field(None, title="Data type of this object",
                                      description="the type of data; options are: dataset-geneExpression, results-pca, results-cellularFunction. Not all types are supported by all providers")
+    file_type: Optional[str] = Field(None, description="the type of file")
     description: Optional[str] = Field(None, title="Description", description="detailed description of this data (optional)")
     version: Optional[str] = Field(None, title="Version of this object",
                                    description="objects shouldn't ever be deleted unless data are redacted or there is a database consistency problem.")
@@ -116,3 +122,5 @@ class ProviderParameters(BaseModel):
     aliases: Optional[str] = Field(None, title="Optional list of aliases for this object")
     checksums: Optional[List[Checksums]] = Field(None, title="Optional checksums for the object",
                                                  description="enables verification checking by clients; this is a json list of objects, each object contains 'checksum' and 'type' fields, where 'type' might be 'sha-256' for example.")
+    requested_object_id: Optional[str] = Field(None,
+                                               description="optional argument to be used by submitter to request an object_id; this could be, for example, used to retrieve objects from a 3rd party for which this endpoint is a proxy. The requested object_id is not guaranteed, enduser should check return value for final object_id used.")
