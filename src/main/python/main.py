@@ -247,6 +247,7 @@ async def submit(parameters: ProviderParameters = Depends(ProviderParameters.as_
 
         ret = ImmunespaceProviderResponse(id=found_immunespace_download["object_id"],
                                           object_id=found_immunespace_download["object_id"],
+                                          submitter_id=found_immunespace_download["submitter_id"],
                                           name=found_immunespace_download['immunespace_download_id'],
                                           self_uri=f"http://localhost:{os.getenv('API_PORT')}/objects/{found_immunespace_download['object_id']}",
                                           data_type=found_immunespace_download["data_type"],
