@@ -119,6 +119,7 @@ async def objects(object_id: str = Path(default="", description="DrsObject ident
         # contents.append(Contents(id="archive", name="archive", drs_uri=f"http://localhost:{os.getenv('API_PORT')}/archive/{object_id}"))
         ret = ImmunespaceProviderResponse(id=found_immunespace_download["object_id"],
                                           object_id=found_immunespace_download["object_id"],
+                                          submitter_id=found_immunespace_download["submitter_id"],
                                           name=found_immunespace_download['immunespace_download_id'],
                                           self_uri=f"http://fuse-provider-immunespace:{os.getenv('API_PORT')}/objects/{found_immunespace_download['object_id']}",
                                           size=file_size,
