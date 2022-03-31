@@ -1,18 +1,5 @@
 version: '3.8'
 services:
-  immunespace-redis:
-    container_name: immunespace-redis
-    image: redis:alpine
-    restart: always
-    environment: {}
-    volumes:
-      - /data
-    expose:
-      - 6379
-    command: [ "--appendonly", "yes" ]
-    networks:
-      - immunespace_network
-
   immunespace-mongodb:
     container_name: immunespace-mongodb
     image: mongo
@@ -45,7 +32,6 @@ services:
     networks:
       - immunespace_network
     depends_on:
-      - immunespace-redis
       - immunespace-mongodb
 
 networks:
