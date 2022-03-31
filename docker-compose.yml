@@ -20,7 +20,7 @@ services:
       - .env
     restart: always
     volumes:
-      - mongodb_data_container:/data/db
+      - mongodb-data-container:/data/db
       - ./init_mongo.sh:/docker-entrypoint-initdb.d/init_mongo.sh
     expose:
       - 27017
@@ -38,8 +38,8 @@ services:
     ports:
         - "${API_PORT}:${API_PORT}"
     volumes:
-        - /var/run/docker.sock:/var/run/docker.sock
-        - ./data:/app/data
+      - immunespace-data-container:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock
     expose:
       - ${API_PORT}
     networks:
@@ -54,5 +54,8 @@ networks:
     external: true
 
 volumes:
-  mongodb_data_container:
+  mongodb-data-container:
+    name: immunespace-mongo-db-data
+  immunespace-data-container:
+    name: immunespace-download-data
 

@@ -6,25 +6,41 @@ import pathlib
 import shutil
 import traceback
 import uuid
+from logging.config import dictConfig
 
 import docker
 import pymongo
 from fastapi import FastAPI, Depends, Path, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from redis import Redis
-from rq import Queue, Worker
 from starlette.responses import StreamingResponse
 
 # https://developer.mozilla.org/en-US/docs/Web/API/WritableStream
-from fuse.models.Objects import Passports, ImmunespaceGA4GHDRSResponse, Contents, ProviderParameters
+from fuse.models.Objects import Passports, Contents, ProviderParameters, ImmunespaceProviderResponse
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'default': {
+            'format': '%(asctime)s | %(levelname)s | %(module)s:%(funcName)s | %(message)s'
+        }
+    },
+    'handlers': {
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'default'
+        },
+    },
+    'loggers': {
+        "fuse-provider-immunespace": {"handlers": ["console"], "level": os.getenv("LOG_LEVEL")},
+    }
+}
+
+dictConfig(LOGGING)
+logger = logging.getLogger("fuse-provider-immunespace")
 
 app = FastAPI()
-
-logger = logging.getLogger(name="api")
-logger.setLevel(logging.INFO)
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-logger.addHandler(console_handler)
 
 origins = [
     f"http://{os.getenv('HOSTNAME')}:{os.getenv('HOSTPORT')}",
@@ -42,9 +58,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-redis_connection = Redis(host='immunespace-redis', port=6379, db=0)
-q = Queue(connection=redis_connection, is_async=True, default_timeout=3600)
-
 mongo_user_name = os.getenv('MONGO_NON_ROOT_USERNAME')
 mongo_password = os.getenv('MONGO_NON_ROOT_PASSWORD')
 mongo_database_name = os.getenv('MONGO_INITDB_DATABASE')
@@ -55,11 +68,6 @@ mongo_db = mongo_client[mongo_database_name]
 mongo_db_immunespace_downloads_column = mongo_db["immunespace_downloads"]
 
 docker_client = docker.from_env()
-
-
-def init_worker():
-    worker = Worker(q, connection=redis_connection)
-    worker.work()
 
 
 @app.get("/service-info", summary="Retrieve information about this service")
@@ -99,20 +107,30 @@ async def service_info():
 async def objects(object_id: str = Path(default="", description="DrsObject identifier"),
                   expand: bool = Query(default=False,
                                        description="If false and the object_id refers to a bundle, then the ContentsObject array contains only those objects directly contained in the bundle. That is, if the bundle contains other bundles, those other bundles are not recursively included in the result. If true and the object_id refers to a bundle, then the entire set of objects in the bundle is expanded. That is, if the bundle contains aother bundles, then those other bundles are recursively expanded and included in the result. Recursion continues through the entire sub-tree of the bundle. If the object_id refers to a blob, then the query parameter is ignored.")):
-    projection = {"_id": 0, "immunespace_download_id": 1, "submitter_id": 1, "accession_id": 1, "apikey": 1, "status": 1, "date_created": 1, "start_date": 1, "end_date": 1}
-    query = {"immunespace_download_id": object_id}
+    projection = {"_id": 0, "immunespace_download_id": 1, "object_id": 1, "submitter_id": 1, "accession_id": 1, "apikey": 1, "status": 1, "data_type": 1,
+                  "file_type": 1, "file_name": 1, "stderr": 1, "date_downloaded": 1}
+    query = {"object_id": object_id}
     found_immunespace_download = mongo_db_immunespace_downloads_column.find_one(query, projection)
     if found_immunespace_download is not None:
         logger.info(f"{found_immunespace_download}")
-        content_files = ["geneBySampleMatrix", "phenoDataMatrix"]
-        contents = list(map(lambda x: Contents(id=x, name=x, drs_uri=f"http://localhost:{os.getenv('API_PORT')}/files/{object_id}/{x}"), content_files))
+        file_size = os.path.getsize(f"/app/data/{found_immunespace_download['immunespace_download_id']}/{found_immunespace_download['file_name']}")
+        contents = Contents(id=found_immunespace_download["object_id"], name=found_immunespace_download["file_name"],
+                            drs_uri=f"http://fuse-provider-immunespace:{os.getenv('API_PORT')}/files/{object_id}")
         # contents.append(Contents(id="archive", name="archive", drs_uri=f"http://localhost:{os.getenv('API_PORT')}/archive/{object_id}"))
-        ret = ImmunespaceGA4GHDRSResponse(id=found_immunespace_download['immunespace_download_id'],
+        ret = ImmunespaceProviderResponse(id=found_immunespace_download["object_id"],
+                                          object_id=found_immunespace_download["object_id"],
+                                          submitter_id=found_immunespace_download["submitter_id"],
                                           name=found_immunespace_download['immunespace_download_id'],
-                                          self_uri=f"http://localhost:{os.getenv('API_PORT')}/objects/{found_immunespace_download['immunespace_download_id']}",
-                                          created_time=f"{found_immunespace_download['date_created']}", mime_type="application/zip",
-                                          contents=contents)
-        return ret.__dict__
+                                          self_uri=f"http://fuse-provider-immunespace:{os.getenv('API_PORT')}/objects/{found_immunespace_download['object_id']}",
+                                          size=file_size,
+                                          data_type=found_immunespace_download["data_type"],
+                                          file_type=found_immunespace_download["file_type"],
+                                          created_time=f"{found_immunespace_download['date_downloaded']}",
+                                          mime_type="application/csv",
+                                          status="finished",
+                                          contents=[contents], stderr=found_immunespace_download['stderr'])
+
+        return vars(ret)
     else:
         return HTTPException(status_code=404, detail="Not found")
 
@@ -181,8 +199,7 @@ async def post_objects(object_id: str = Path(default="", description="DrsObject 
 @app.get("/search/{submitter_id}")
 async def search(submitter_id: str):
     query = {"submitter_id": submitter_id}
-    projection = {"_id": 0, "immunespace_download_id": 1, "submitter_id": 1, "accession_id": 1, "apikey": 1, "status": 1, "date_created": 1, "start_date": 1, "end_date": 1}
-    # projection = {"_id": 0, "immunespace_download_id": 1}
+    projection = {"_id": 0, "immunespace_download_id": 1, "object_id": 1, "submitter_id": 1, "accession_id": 1, "apikey": 1, "file_name": 1, "date_downloaded": 1}
     ret = list(map(lambda a: a, mongo_db_immunespace_downloads_column.find(query, projection)))
     if len(ret) > 0:
         return ret
@@ -191,75 +208,98 @@ async def search(submitter_id: str):
 
 
 @app.post("/submit")
-def submit(parameters: ProviderParameters = Depends(ProviderParameters.as_form)):
-    immunespace_download_query = {"submitter_id": parameters.submitter_id, "accession_id": parameters.accession_id, "apikey": parameters.apikey}
-    projection = {"_id": 0, "immunespace_download_id": 1, "submitter_id": 1, "accession_id": 1, "apikey": 1, "status": 1, "date_created": 1, "start_date": 1, "end_date": 1}
-    entry = mongo_db_immunespace_downloads_column.find(immunespace_download_query, projection)
+async def submit(parameters: ProviderParameters = Depends(ProviderParameters.as_form)):
+    try:
 
-    local_path = os.path.join("/app/data")
+        immunespace_download_query = {"submitter_id": parameters.submitter_id, "accession_id": parameters.accession_id, "apikey": parameters.apikey,
+                                      "file_type": parameters.file_type}
+        projection = {"_id": 0, "immunespace_download_id": 1, "object_id": 1, "file_type": 1}
+        found_immunespace_download = mongo_db_immunespace_downloads_column.find_one(immunespace_download_query, projection)
+        if found_immunespace_download is not None:
+            logger.info(f"found_immunespace_download: {found_immunespace_download}")
+            immunespace_download_id = found_immunespace_download["immunespace_download_id"]
+            local_path = os.path.abspath(f"/app/data/{immunespace_download_id}")
+            logger.debug(f"local_path: {local_path}")
+            if os.path.exists(local_path) and len(os.listdir(local_path)) == 0:
+                logger.debug(f"path exists, but is empty")
+                run_immunespace_download(immunespace_download_id=immunespace_download_id, accession_id=parameters.accession_id, apikey=parameters.apikey)
+        else:
+            immunespace_download_id = str(uuid.uuid4())[:8]
+            local_path = os.path.join(f"/app/data/{immunespace_download_id}")
+            logger.info(f"local_path: {local_path}")
+            os.makedirs(local_path, exist_ok=True)
+            stderr = run_immunespace_download(immunespace_download_id=immunespace_download_id, accession_id=parameters.accession_id, apikey=parameters.apikey)
+            for (file_type, file_name) in [("filetype_dataset_expression", "geneBySampleMatrix.csv"), ("filetype_dataset_properties", "phenoDataMatrix.csv")]:
+                immunespace_download_entry = {"immunespace_download_id": immunespace_download_id, "submitter_id": parameters.submitter_id,
+                                                                 "data_type": "class_dataset_expression", "object_id": str(uuid.uuid4()), "accession_id": parameters.accession_id,
+                                                                 "apikey": parameters.apikey, "file_type": file_type, "file_name": file_name,
+                                                                 "date_downloaded": datetime.datetime.utcnow(), "stderr": stderr}
+                mongo_db_immunespace_downloads_column.insert_one(immunespace_download_entry)
 
-    if entry.count() > 0:
-        immunespace_download_id = entry.next()["immunespace_download_id"]
-        local_path = os.path.join(local_path, f"{immunespace_download_id}-immunespace-data")
+        immunespace_download_query = {"submitter_id": parameters.submitter_id, "accession_id": parameters.accession_id, "apikey": parameters.apikey,
+                                      "file_type": parameters.file_type}
+        projection = {"_id": 0, "immunespace_download_id": 1, "object_id": 1, "submitter_id": 1, "accession_id": 1, "apikey": 1, "status": 1, "data_type": 1,
+                      "file_type": 1, "file_name": 1, "stderr": 1, "date_downloaded": 1}
+        found_immunespace_download = mongo_db_immunespace_downloads_column.find_one(immunespace_download_query, projection)
 
-        if os.path.exists(local_path) and len(os.listdir(local_path)) == 0:
-            run_immunespace_download(immunespace_download_id, accession_id=parameters.accession_id, apikey=parameters.apikey)
-        return {"object_id": immunespace_download_id}
-    else:
-        immunespace_download_id = str(uuid.uuid4())[:8]
-        local_path = os.path.join(local_path, f"{immunespace_download_id}-immunespace-data")
-        os.mkdir(local_path)
+        contents = Contents(id=found_immunespace_download["object_id"], name=found_immunespace_download["file_name"],
+                            drs_uri=f"http://localhost:{os.getenv('API_PORT')}/files/{found_immunespace_download['object_id']}")
 
-        task_mapping_entry = {"immunespace_download_id": immunespace_download_id, "submitter_id": parameters.submitter_id, "accession_id": parameters.accession_id,
-                              "apikey": parameters.apikey, "status": "queued", "date_created": datetime.datetime.utcnow(), "start_date": None, "end_date": None}
-        mongo_db_immunespace_downloads_column.insert_one(task_mapping_entry)
+        ret = ImmunespaceProviderResponse(id=found_immunespace_download["object_id"],
+                                          object_id=found_immunespace_download["object_id"],
+                                          name=found_immunespace_download['immunespace_download_id'],
+                                          self_uri=f"http://localhost:{os.getenv('API_PORT')}/objects/{found_immunespace_download['object_id']}",
+                                          data_type=found_immunespace_download["data_type"],
+                                          file_type=found_immunespace_download["file_type"],
+                                          created_time=f"{found_immunespace_download['date_downloaded']}",
+                                          mime_type="application/csv", status="finished",
+                                          contents=[contents], stderr=found_immunespace_download['stderr'])
 
-        run_immunespace_download(immunespace_download_id, accession_id=parameters.accession_id, apikey=parameters.apikey)
-        return {"object_id": immunespace_download_id}
+        return vars(ret)
+
+    except Exception as e:
+        logger.exception(e)
+        return HTTPException(status_code=404, detail="Not found")
 
 
 def run_immunespace_download(immunespace_download_id: str, accession_id: str, apikey: str):
-    task_mapping_entry = {"immunespace_download_id": immunespace_download_id}
-    try:
-        local_path = os.getenv('HOST_ABSOLUTE_PATH')
+    stderr = ""
+    volumes = {
+        "immunespace-download-data": {'bind': '/data', 'mode': 'rw'}
+    }
+    image = "txscience/tx-immunespace-groups:0.3"
+    command = f"-g \"{accession_id}\" -a \"{apikey}\" -o /data/{immunespace_download_id}"
+    immunespace_groups_container_logs = docker_client.containers.run(image, volumes=volumes, name=f"{immunespace_download_id}-immunespace-groups",
+                                                                     working_dir=f"/data/{immunespace_download_id}",
+                                                                     privileged=True, remove=True, command=command)
+    immunespace_groups_container_logs_decoded = immunespace_groups_container_logs.decode("utf8")
+    stderr += immunespace_groups_container_logs_decoded
+    logger.info(msg=f"finished txscience/tx-immunespace-groups:0.3")
+    if immunespace_groups_container_logs_decoded.__contains__("returned non-zero exit status"):
+        raise Exception("There was a problem running the txscience/tx-immunespace-groups container")
 
-        new_values = {"$set": {"start_date": datetime.datetime.utcnow(), "status": "running"}}
-        mongo_db_immunespace_downloads_column.update_one(task_mapping_entry, new_values)
-
-        image = "txscience/tx-immunespace-groups:0.3"
-        volumes = {os.path.join(local_path, f"data/{immunespace_download_id}-immunespace-data"): {'bind': '/data', 'mode': 'rw'}}
-        command = f"-g \"{accession_id}\" -a \"{apikey}\" -o /data"
-        immunespace_groups_container_logs = docker_client.containers.run(image, volumes=volumes, name=f"{immunespace_download_id}-immunespace-groups", working_dir="/data",
-                                                                         privileged=True, remove=True, command=command)
-
-        immunespace_groups_container_logs_decoded = immunespace_groups_container_logs.decode("utf8")
-        logger.info(msg=f"finished txscience/tx-immunespace-groups:0.3")
-        logger.debug(msg=f"immunespace_groups_container_logs: {immunespace_groups_container_logs_decoded}")
-        if immunespace_groups_container_logs_decoded.__contains__("returned non-zero exit status"):
-            raise Exception("There was a problem running the txscience/tx-immunespace-groups container")
-
-        image = "txscience/fuse-mapper-immunespace:0.1"
-        volumes = {os.path.join(local_path, f"data/{immunespace_download_id}-immunespace-data"): {'bind': '/data', 'mode': 'rw'}}
-        command = f"-g /data/geneBySampleMatrix.csv -p /data/phenoDataMatrix.csv"
-        mapper_container_logs = docker_client.containers.run(image, volumes=volumes, name=f"{immunespace_download_id}-immunespace-mapper", working_dir="/data", privileged=True,
-                                                             remove=True, command=command)
-        logger.info(msg=f"finished fuse-mapper-immunespace:0.1")
-        logger.debug(msg=f"mapper_container_logs: {mapper_container_logs}")
-
-        new_values = {"$set": {"end_date": datetime.datetime.utcnow(), "status": "finished"}}
-        mongo_db_immunespace_downloads_column.update_one(task_mapping_entry, new_values)
-    except Exception as e:
-        new_values = {"$set": {"end_date": datetime.datetime.utcnow(), "status": "failed"}}
-        mongo_db_immunespace_downloads_column.update_one(task_mapping_entry, new_values)
-        logger.error(e)
+    image = "txscience/fuse-mapper-immunespace:0.1"
+    command = f"-g /data/{immunespace_download_id}/geneBySampleMatrix.csv -p /data/{immunespace_download_id}/phenoDataMatrix.csv"
+    mapper_container_logs = docker_client.containers.run(image, volumes=volumes, name=f"{immunespace_download_id}-immunespace-mapper",
+                                                         working_dir=f"/data/{immunespace_download_id}",
+                                                         privileged=True, remove=True, command=command)
+    logger.info(msg=f"finished fuse-mapper-immunespace:0.1")
+    mapper_container_logs_decoded = mapper_container_logs.decode("utf8")
+    stderr += mapper_container_logs_decoded
+    logger.debug(msg=f"stderr: {stderr}")
+    return stderr
 
 
-@app.get("/files/{immunespace_download_id}/{file_name}")
-def files(immunespace_download_id: str, file_name: str):
-    local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "/app/data")
-    dir_path = os.path.join(local_path, f"{immunespace_download_id}-immunespace-data")
-    file_path = os.path.join(dir_path, f"{file_name}.csv")
-    if not os.path.isdir(dir_path) or not os.path.exists(file_path):
+@app.get("/files/{object_id}")
+async def files(object_id: str):
+    query = {"object_id": object_id}
+    projection = {"_id": 0, "immunespace_download_id": 1, "object_id": 1, "submitter_id": 1, "accession_id": 1, "apikey": 1, "file_name": 1, "date_downloaded": 1}
+    entry = mongo_db_immunespace_downloads_column.find_one(query, projection)
+    immunespace_download_id = entry["immunespace_download_id"]
+    file_name = entry["file_name"]
+
+    file_path = os.path.abspath(f"/app/data/{immunespace_download_id}/{file_name}")
+    if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="Not found")
 
     def iterfile():
@@ -270,12 +310,12 @@ def files(immunespace_download_id: str, file_name: str):
             raise Exception()
 
     response = StreamingResponse(iterfile(), media_type="text/csv")
-    response.headers["Content-Disposition"] = f"attachment; filename={file_name}.csv"
+    response.headers["Content-Disposition"] = f"attachment; filename={file_name}"
     return response
 
 
-@app.delete("/delete/{immunespace_download_id}", summary="DANGER ZONE: Delete a downloaded object; this action is rarely justified.")
-async def immunespace_download_delete(immunespace_download_id: str):
+@app.delete("/delete/{object_id}", summary="DANGER ZONE: Delete a downloaded object; this action is rarely justified.")
+async def delete(object_id: str):
     '''
     Delete cached data from the remote provider, identified by the provided download_id.
     <br>**WARNING**: This will orphan associated analyses; only delete downloads if:
@@ -292,45 +332,43 @@ async def immunespace_download_delete(immunespace_download_id: str):
     '''
     delete_status = "done"
 
-    # Assuming the job already executed, remove any database records
-    ret_mongo = ""
-    ret_mongo_err = ""
-    try:
-        task_query = {"immunespace_download_id": immunespace_download_id}
-        ret = mongo_db_immunespace_downloads_column.delete_one(task_query)
-        # <class 'pymongo.results.DeleteResult'>
-        delete_status = "deleted"
-        if not ret.acknowledged:
-            delete_status = "failed"
-            ret_mongo += "ret.acknowledged not True.\n"
-        if ret.deleted_count != 1:
-            # should never happen if index was created for this field
-            delete_status = "failed"
-            ret_mongo += f"Wrong number of records deleted ({str(ret.deleted_count)}).\n"
-        ## xxx
-        # could check if there are any remaining; but this should instead be enforced by creating an index for this columnxs
-        # could check ret.raw_result['n'] and ['ok'], but 'ok' seems to always be 1.0, and 'n' is the same as deleted_count
-        ##
-        ret_mongo += f"Deleted count=({str(ret.deleted_count)}), Acknowledged=({str(ret.acknowledged)}).\n"
-    except Exception as e:
-        ret_mongo_err += f"! Exception {type(e)} occurred while deleting job from database, message=[{e}] \n! traceback=\n{traceback.format_exc()}\n"
-        delete_status = "exception"
+    projection = {"_id": 0, "immunespace_download_id": 1, "object_id": 1, "submitter_id": 1, "accession_id": 1, "apikey": 1, "status": 1, "data_type": 1,
+                  "file_type": 1, "file_name": 1, "date_downloaded": 1}
+    query = {"object_id": object_id}
+    found_immunespace_download = mongo_db_immunespace_downloads_column.find_one(query, projection)
 
-    # Data are cached on a mounted filesystem, unlink that too if it's there
-    ret_os = ""
-    ret_os_err = ""
-    try:
-        local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "/app/data")
-        local_path = os.path.join(local_path, f"{immunespace_download_id}-immunespace-data")
-        shutil.rmtree(local_path, ignore_errors=False)
-    except Exception as e:
-        ret_os_err += f"! Exception {type(e)} occurred while deleting job from filesystem, message=[{e}] \n! traceback=\n{traceback.format_exc()}\n"
-        delete_status = "exception"
+    message = ""
+    error = ""
 
-    ret_message = ret_mongo + ret_os
-    ret_err_message = ret_mongo_err + ret_os_err
-    return {
+    if found_immunespace_download is not None:
+
+        # Assuming the job already executed, remove any database records
+        try:
+
+            task_query = {"immunespace_download_id": found_immunespace_download["immunespace_download_id"]}
+            ret = mongo_db_immunespace_downloads_column.delete_many(task_query)
+            # <class 'pymongo.results.DeleteResult'>
+            delete_status = "deleted"
+            if not ret.acknowledged:
+                delete_status = "failed"
+                message += "ret.acknowledged not True.\n"
+            message += f"Deleted count=({str(ret.deleted_count)}), Acknowledged=({str(ret.acknowledged)}).\n"
+        except Exception as e:
+            error += f"! Exception {type(e)} occurred while deleting job from database, message=[{e}] \n! traceback=\n{traceback.format_exc()}\n"
+            delete_status = "exception"
+
+        # Data are cached on a mounted filesystem, unlink that too if it's there
+        try:
+            local_path = os.path.abspath(f"/app/data/{found_immunespace_download['immunespace_download_id']}")
+            shutil.rmtree(local_path, ignore_errors=False)
+        except Exception as e:
+            error += f"! Exception {type(e)} occurred while deleting job from filesystem, message=[{e}] \n! traceback=\n{traceback.format_exc()}\n"
+            delete_status = "exception"
+
+    ret = {
         "status": delete_status,
-        "info": ret_message,
-        "stderr": ret_err_message,
+        "info": message,
+        "stderr": error,
     }
+    logger.debug(f"{ret}")
+    return ret
