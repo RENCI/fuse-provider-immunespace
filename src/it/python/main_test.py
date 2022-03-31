@@ -3,9 +3,11 @@ import time
 
 import requests
 
+#host = "dev-immcellfie.edc.renci.org"
+host = "localhost"
 
 def test_service_info():
-    url = f"http://localhost:{os.getenv('API_PORT')}/service-info"
+    url = f"http://{host}:{os.getenv('API_PORT')}/service-info"
     r = requests.get(url=url, headers={'accept': 'application/json'})
     status_code = r.status_code
     response_json = r.json()
@@ -14,7 +16,7 @@ def test_service_info():
 
 
 def test_submit():
-    url = f"http://localhost:{os.getenv('API_PORT')}/submit"
+    url = f"http://{host}:{os.getenv('API_PORT')}/submit"
     params = {'service_id': 'fuse-provider-immunespace',
               'submitter_id': 'jdr0887@gmail.com',
               'data_type': 'class_dataset_expression',
@@ -31,7 +33,7 @@ def test_submit():
 
 
 def test_search():
-    url = f"http://localhost:{os.getenv('API_PORT')}/search/jdr0887@gmail.com"
+    url = f"http://{host}:{os.getenv('API_PORT')}/search/jdr0887@gmail.com"
     r = requests.get(url=url, headers={'accept': 'application/json'})
     status_code = r.status_code
     response_json = r.json()
@@ -43,7 +45,7 @@ def test_search():
 
 def test_objects_get():
     object_id = test_search()
-    url = f"http://localhost:{os.getenv('API_PORT')}/objects/{object_id}"
+    url = f"http://{host}:{os.getenv('API_PORT')}/objects/{object_id}"
     r = requests.get(url=url, headers={'accept': 'application/json'})
     status_code = r.status_code
     response_json = r.json()
@@ -55,7 +57,7 @@ def test_objects_get():
 
 def test_download_file():
     object_id = test_search()
-    url = f"http://localhost:{os.getenv('API_PORT')}/files/{object_id}"
+    url = f"http://{host}:{os.getenv('API_PORT')}/files/{object_id}"
     r = requests.get(url=url, headers={'accept': 'application/json'})
     status_code = r.status_code
     content_type = r.headers.get('content-type')
@@ -64,7 +66,7 @@ def test_download_file():
 
 def test_delete():
     object_id = test_search()
-    url = f"http://localhost:{os.getenv('API_PORT')}/delete/{object_id}"
+    url = f"http://{host}:{os.getenv('API_PORT')}/delete/{object_id}"
     r = requests.delete(url=url, headers={'accept': 'application/json'})
     status_code = r.status_code
     response_json = r.json()
