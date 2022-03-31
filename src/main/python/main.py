@@ -113,6 +113,7 @@ async def objects(object_id: str = Path(default="", description="DrsObject ident
     found_immunespace_download = mongo_db_immunespace_downloads_column.find_one(query, projection)
     if found_immunespace_download is not None:
         logger.info(f"{found_immunespace_download}")
+        file_size = os.path.getsize(f"/app/data/{found_immunespace_download['immunespace_download_id']}/{found_immunespace_download['file_name']}")
         contents = Contents(id=found_immunespace_download["object_id"], name=found_immunespace_download["file_name"],
                             drs_uri=f"http://fuse-provider-immunespace:{os.getenv('API_PORT')}/files/{object_id}")
         # contents.append(Contents(id="archive", name="archive", drs_uri=f"http://localhost:{os.getenv('API_PORT')}/archive/{object_id}"))
@@ -120,6 +121,7 @@ async def objects(object_id: str = Path(default="", description="DrsObject ident
                                           object_id=found_immunespace_download["object_id"],
                                           name=found_immunespace_download['immunespace_download_id'],
                                           self_uri=f"http://fuse-provider-immunespace:{os.getenv('API_PORT')}/objects/{found_immunespace_download['object_id']}",
+                                          size=file_size,
                                           data_type=found_immunespace_download["data_type"],
                                           file_type=found_immunespace_download["file_type"],
                                           created_time=f"{found_immunespace_download['date_downloaded']}",
