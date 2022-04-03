@@ -125,3 +125,19 @@ class ProviderParameters(BaseModel):
                                                  description="enables verification checking by clients; this is a json list of objects, each object contains 'checksum' and 'type' fields, where 'type' might be 'sha-256' for example.")
     requested_object_id: Optional[str] = Field(None,
                                                description="optional argument to be used by submitter to request an object_id; this could be, for example, used to retrieve objects from a 3rd party for which this endpoint is a proxy. The requested object_id is not guaranteed, enduser should check return value for final object_id used.")
+
+from enum import Enum
+class DataType(str, Enum):
+    geneExpression='class_dataset_expression'
+    resultsPCATable='class_results_PCATable'
+    resultsCellFIE='class_results_CellFIE'
+    # xxx to add more datatypes: expand this
+
+class FileType(str, Enum):
+    datasetGeneExpression='filetype_dataset_expression'
+    datasetProperties='filetype_dataset_properties'
+    datasetArchive='filetype_dataset_archive'
+    resultsPCATable='filetype_results_PCATable'
+    resultsCellFIE='filetype_results_CellFIE'
+    # xxx to add more datatypes: expand this
+
