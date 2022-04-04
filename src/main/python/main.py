@@ -268,19 +268,19 @@ async def submit(submitter_id: str = Query(default=..., description="unique iden
                       "file_type": 1, "file_name": 1, "stderr": 1, "date_downloaded": 1}
         found_immunespace_download = mongo_db_immunespace_downloads_column.find_one(immunespace_download_query, projection)
 
-        contents = Contents(id=found_immunespace_download["object_id"], name=found_immunespace_download["file_name"],
-                            drs_uri=f"http://localhost:{os.getenv('API_PORT')}/files/{found_immunespace_download['object_id']}")
+        # contents = Contents(id=found_immunespace_download["object_id"], name=found_immunespace_download["file_name"],
+        #                     drs_uri=f"http://localhost:{os.getenv('API_PORT')}/files/{found_immunespace_download['object_id']}")
 
         ret = ImmunespaceProviderResponse(id=found_immunespace_download["object_id"],
                                           object_id=found_immunespace_download["object_id"],
                                           submitter_id=found_immunespace_download["submitter_id"],
-                                          name=found_immunespace_download['immunespace_download_id'],
+                                          name=found_immunespace_download['file_name'],
                                           self_uri=f"http://localhost:{os.getenv('API_PORT')}/objects/{found_immunespace_download['object_id']}",
                                           data_type=found_immunespace_download["data_type"],
                                           file_type=found_immunespace_download["file_type"],
                                           created_time=f"{found_immunespace_download['date_downloaded']}",
                                           mime_type="application/csv", status="finished",
-                                          contents=[contents], stderr=found_immunespace_download['stderr'])
+                                          contents=[], stderr=found_immunespace_download['stderr'])
 
         return vars(ret)
 
