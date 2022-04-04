@@ -298,7 +298,7 @@ def run_immunespace_download(immunespace_download_id: str, accession_id: str, ap
     command = f"-g \"{accession_id}\" -a \"{apikey}\" -o /data/{immunespace_download_id}"
     immunespace_groups_container_logs = docker_client.containers.run(image, volumes=volumes, name=f"{immunespace_download_id}-immunespace-groups",
                                                                      working_dir=f"/data/{immunespace_download_id}",
-                                                                     privileged=True, remove=True, command=command)
+                                                                     privileged=True, remove=True, command=command, detach=False)
     immunespace_groups_container_logs_decoded = immunespace_groups_container_logs.decode("utf8")
     stderr += immunespace_groups_container_logs_decoded
     logger.info(msg=f"finished txscience/tx-immunespace-groups:0.3")
@@ -309,7 +309,7 @@ def run_immunespace_download(immunespace_download_id: str, accession_id: str, ap
     command = f"-g /data/{immunespace_download_id}/geneBySampleMatrix.csv -p /data/{immunespace_download_id}/phenoDataMatrix.csv"
     mapper_container_logs = docker_client.containers.run(image, volumes=volumes, name=f"{immunespace_download_id}-immunespace-mapper",
                                                          working_dir=f"/data/{immunespace_download_id}",
-                                                         privileged=True, remove=True, command=command)
+                                                         privileged=True, remove=True, command=command, detach=False)
     logger.info(msg=f"finished fuse-mapper-immunespace:0.1")
     mapper_container_logs_decoded = mapper_container_logs.decode("utf8")
     stderr += mapper_container_logs_decoded
