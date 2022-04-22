@@ -1,7 +1,7 @@
 import inspect
 from typing import Type, List, Optional, Any
 
-from fastapi import Form
+from fastapi import Form, Query
 from pydantic import BaseModel, Field
 from pydantic.networks import EmailStr
 from enum import Enum
@@ -146,5 +146,7 @@ class ProviderParameters(BaseModel):
     aliases: Optional[str] = Field(None, title="Optional list of aliases for this object")
     checksums: Optional[List[Checksums]] = Field(None, title="Optional checksums for the object",
                                                  description="enables verification checking by clients; this is a json list of objects, each object contains 'checksum' and 'type' fields, where 'type' might be 'sha-256' for example.")
+    requested_object_id: str = Query(default=None,
+                                     description="optional argument to be used by submitter to request an object_id; this could be, for example, used to retrieve objects from a 3rd party for which this endpoint is a proxy. The requested object_id is not guaranteed, enduser should check return value for final object_id used."),
 
 
