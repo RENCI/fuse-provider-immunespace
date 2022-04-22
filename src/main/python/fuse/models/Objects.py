@@ -4,6 +4,7 @@ from typing import Type, List, Optional, Any
 from fastapi import Form
 from pydantic import BaseModel, Field
 from pydantic.networks import EmailStr
+from enum import Enum
 
 
 def as_form(cls: Type[BaseModel]):
@@ -78,8 +79,10 @@ class Contents:
 
 
 class ImmunespaceProviderResponse:
-    def __init__(self, id: str, object_id: str, submitter_id: str, name: str, self_uri: str, created_time: str, mime_type: str, file_type: str, status: str, description: Optional[str] = None,
-                 size: Optional[int] = 0, updated_time: Optional[str] = None, version: Optional[str] = None, aliases: Optional[list[str]] = None, checksums: Optional[list[Checksums]] = None,
+    def __init__(self, id: str, object_id: str, submitter_id: str, name: str, self_uri: str, created_time: str, mime_type: str, file_type: str, status: str,
+                 description: Optional[str] = None,
+                 size: Optional[int] = 0, updated_time: Optional[str] = None, version: Optional[str] = None, aliases: Optional[list[str]] = None,
+                 checksums: Optional[list[Checksums]] = None,
                  access_methods: Optional[list[AccessMethods]] = None, contents: Optional[list[Contents]] = None, data_type: Optional[str] = None, stderr: Optional[str] = None):
         self.id = id
         self.object_id = object_id
@@ -108,13 +111,33 @@ class Passports(BaseModel):
     passports: List[str] = ["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJnYTRnaF9wYXNzcG9ydF92MSI6W119.JJ5rN0ktP0qwyZmIPpxmF_p7JsxAZH6L6brUxtad3CM"]
 
 
+class DataType(str, Enum):
+    geneExpression = 'class_dataset_expression'
+    resultsPCATable = 'class_results_PCATable'
+    resultsCellFieDetailScoringTable = 'class_results_CellFieDetailScoringTable'
+    resultsCellFieScoreBinaryTable = 'class_results_CellFieScoreBinaryTable'
+    resultsCellFieScoreTable = 'class_results_CellFieScoreTable'
+    resultsCellFieTaskInfoTable = 'class_results_CellFieTaskInfoTable'
+    # xxx to add more datatypes: expand this
+
+
+class FileType(str, Enum):
+    datasetGeneExpression = 'filetype_dataset_expression'
+    datasetProperties = 'filetype_dataset_properties'
+    datasetArchive = 'filetype_dataset_archive'
+    resultsPCATable = 'filetype_results_PCATable'
+    resultsCellFieDetailScoringTable = 'filetype_results_CellFieDetailScoringTable'
+    resultsCellFieScoreBinaryTable = 'filetype_results_CellFieScoreBinaryTable'
+    resultsCellFieScoreTable = 'filetype_results_CellFieScoreTable'
+    resultsCellFieTaskInfoTable = 'filetype_results_CellFieTaskInfoTable'
+    # xxx to add more datatypes: expand this
+
+
 @as_form
 class ProviderParameters(BaseModel):
     service_id: str = Field(..., title="Provider service id", description="id of service used to upload this object")
     submitter_id: EmailStr = Field(..., title="email", description="unique submitter id (email)")
-    data_type: Optional[str] = Field(None, title="Data type of this object",
-                                     description="the type of data; options are: dataset-geneExpression, results-pca, results-cellularFunction. Not all types are supported by all providers")
-    file_type: Optional[str] = Field(None, description="the type of file")
+    data_type: DataType = Field(..., title="Data type of this object", description="the type of data associated with this object (e.g, results or input dataset)")
     description: Optional[str] = Field(None, title="Description", description="detailed description of this data (optional)")
     version: Optional[str] = Field(None, title="Version of this object",
                                    description="objects shouldn't ever be deleted unless data are redacted or there is a database consistency problem.")
@@ -123,21 +146,5 @@ class ProviderParameters(BaseModel):
     aliases: Optional[str] = Field(None, title="Optional list of aliases for this object")
     checksums: Optional[List[Checksums]] = Field(None, title="Optional checksums for the object",
                                                  description="enables verification checking by clients; this is a json list of objects, each object contains 'checksum' and 'type' fields, where 'type' might be 'sha-256' for example.")
-    requested_object_id: Optional[str] = Field(None,
-                                               description="optional argument to be used by submitter to request an object_id; this could be, for example, used to retrieve objects from a 3rd party for which this endpoint is a proxy. The requested object_id is not guaranteed, enduser should check return value for final object_id used.")
 
-from enum import Enum
-class DataType(str, Enum):
-    geneExpression='class_dataset_expression'
-    resultsPCATable='class_results_PCATable'
-    resultsCellFIE='class_results_CellFIE'
-    # xxx to add more datatypes: expand this
-
-class FileType(str, Enum):
-    datasetGeneExpression='filetype_dataset_expression'
-    datasetProperties='filetype_dataset_properties'
-    datasetArchive='filetype_dataset_archive'
-    resultsPCATable='filetype_results_PCATable'
-    resultsCellFIE='filetype_results_CellFIE'
-    # xxx to add more datatypes: expand this
 

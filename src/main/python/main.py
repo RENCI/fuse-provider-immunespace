@@ -7,7 +7,6 @@ import shutil
 import traceback
 import uuid
 from logging.config import dictConfig
-
 from typing import List, Optional
 
 import docker
@@ -17,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import StreamingResponse
 
 # https://developer.mozilla.org/en-US/docs/Web/API/WritableStream
-from fuse.models.Objects import Passports, Contents, ProviderParameters, ImmunespaceProviderResponse, DataType, FileType
+from fuse.models.Objects import Passports, Contents, ImmunespaceProviderResponse, DataType, FileType, ProviderParameters
 
 LOGGING = {
     'version': 1,
@@ -42,7 +41,7 @@ LOGGING = {
 dictConfig(LOGGING)
 logger = logging.getLogger("fuse-provider-immunespace")
 
-g_api_version="0.0.1"
+g_api_version = "0.0.1"
 
 app = FastAPI(openapi_url=f"/api/{g_api_version}/openapi.json",
               title="Immunespace Provider",
@@ -50,13 +49,12 @@ app = FastAPI(openapi_url=f"/api/{g_api_version}/openapi.json",
               terms_of_service="https://github.com/RENCI/fuse-agent/doc/terms.pdf",
               contact={
                   "url": "http://txscience.renci.org/contact/",
-            },
-            license_info={
-            "name": "MIT License",
-                "url": "https://github.com/RENCI/fuse-agent/blob/main/LICENSE"
-            }
+              },
+              license_info={
+                  "name": "MIT License",
+                  "url": "https://github.com/RENCI/fuse-agent/blob/main/LICENSE"
+              }
               )
-
 
 origins = [
     f"http://{os.getenv('HOSTNAME')}:{os.getenv('HOSTPORT')}",
@@ -224,21 +222,12 @@ async def search(submitter_id: str):
 
 
 @app.post("/submit")
-async def submit(submitter_id: str = Query(default=..., description="unique identifier for the submitter, and also the email used for registration with Immunespace"),
-                 accession_id: str = Query(default=..., description="Immunespace group id to load"),
-                 apikey: str = Query(default=..., description="Immunespace apikey for the submitter_id"),
-                 data_type: DataType = Query(default=..., description="the type of data; options are: class_dataset_expression, class-results_PCATable, class_results_CellFIE."),
-                 file_type: FileType = Query(default=..., description="the type of file"),
-                 description: Optional[str] = Query(default=None, description="optional description of this object"),
-                 version: Optional[str] = Query(default="1.0", description="version of this object; objects should never be deleted unless data are redacted"),
-                 aliases: Optional[str] = Query(default=None, description="optional list of aliases for this object"),
-                 checksums: Optional[List] = Query(default=None, description="optional checksums for the object, enabling verification checking by clients; this is a json list of objects, each object contains 'checksum' and 'type' fields, where 'type' might be 'sha-256' for example."),
-                 requested_object_id: str = Query(default=None, description="optional argument to be used by submitter to request an object_id; this could be, for example, used to retrieve objects from a 3rd party for which this endpoint is a proxy. The requested object_id is not guaranteed, enduser should check return value for final object_id used.")):
-
+async def submit(parameters: ProviderParameters = Depends(ProviderParameters.as_form)):
+    logger.info(f"parameters: {parameters}")
     try:
 
-        immunespace_download_query = {"submitter_id": submitter_id, "accession_id": accession_id, "apikey": apikey,
-                                      "file_type": file_type}
+        immunespace_download_query = {"submitter_id": parameters.submitter_id, "accession_id": parameters.accession_id,
+                                      "apikey": parameters.apikey, "file_type": parameters.file_type}
         projection = {"_id": 0, "immunespace_download_id": 1, "object_id": 1, "file_type": 1}
         found_immunespace_download = mongo_db_immunespace_downloads_column.find_one(immunespace_download_query, projection)
         if found_immunespace_download is not None:
@@ -248,22 +237,23 @@ async def submit(submitter_id: str = Query(default=..., description="unique iden
             logger.debug(f"local_path: {local_path}")
             if os.path.exists(local_path) and len(os.listdir(local_path)) == 0:
                 logger.debug(f"path exists, but is empty")
-                run_immunespace_download(immunespace_download_id=immunespace_download_id, accession_id=accession_id, apikey=apikey)
+                run_immunespace_download(immunespace_download_id=immunespace_download_id, accession_id=parameters.accession_id, apikey=parameters.apikey)
         else:
             immunespace_download_id = str(uuid.uuid4())[:8]
             local_path = os.path.join(f"/app/data/{immunespace_download_id}")
             logger.info(f"local_path: {local_path}")
             os.makedirs(local_path, exist_ok=True)
-            stderr = run_immunespace_download(immunespace_download_id=immunespace_download_id, accession_id=accession_id, apikey=apikey)
+            stderr = run_immunespace_download(immunespace_download_id=immunespace_download_id, accession_id=parameters.accession_id, apikey=parameters.apikey)
             for (file_type, file_name) in [("filetype_dataset_expression", "geneBySampleMatrix.csv"), ("filetype_dataset_properties", "phenoDataMatrix.csv")]:
-                immunespace_download_entry = {"immunespace_download_id": immunespace_download_id, "submitter_id": submitter_id,
-                                                                 "data_type": "class_dataset_expression", "object_id": str(uuid.uuid4()), "accession_id": accession_id,
-                                                                 "apikey": apikey, "file_type": file_type, "file_name": file_name,
-                                                                 "date_downloaded": datetime.datetime.utcnow(), "stderr": stderr}
+                immunespace_download_entry = {"immunespace_download_id": immunespace_download_id, "submitter_id": parameters.submitter_id,
+                                              "data_type": "class_dataset_expression", "object_id": str(uuid.uuid4()), "accession_id": parameters.accession_id,
+                                              "apikey": parameters.apikey, "file_type": file_type, "file_name": file_name,
+                                              "date_downloaded": datetime.datetime.utcnow(), "stderr": stderr}
                 mongo_db_immunespace_downloads_column.insert_one(immunespace_download_entry)
 
-        immunespace_download_query = {"submitter_id": submitter_id, "accession_id": accession_id, "apikey": apikey,
-                                      "file_type": file_type}
+        immunespace_download_query = {"submitter_id": parameters.submitter_id, "accession_id": parameters.accession_id,
+                                      "apikey": parameters.apikey, "file_type": parameters.file_type}
+
         projection = {"_id": 0, "immunespace_download_id": 1, "object_id": 1, "submitter_id": 1, "accession_id": 1, "apikey": 1, "status": 1, "data_type": 1,
                       "file_type": 1, "file_name": 1, "stderr": 1, "date_downloaded": 1}
         found_immunespace_download = mongo_db_immunespace_downloads_column.find_one(immunespace_download_query, projection)
