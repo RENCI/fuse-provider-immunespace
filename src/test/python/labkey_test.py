@@ -9,7 +9,7 @@ import requests
 from labkey.api_wrapper import APIWrapper
 from labkey.query import QueryFilter
 
-api = APIWrapper(domain="www.immunespace.org", container_path="Studies", use_ssl=True, api_key="apikey|5d2f826c452af1849b3f106630fef50a", disable_csrf=True)
+api = APIWrapper(domain="www.immunespace.org", container_path="Studies", use_ssl=True, api_key="apikey|01a141db71869525cbf60a5a333edd31", disable_csrf=True)
 
 
 def curl_get_into_file(url: str, http_header: list):
@@ -45,10 +45,16 @@ def get_feature_annotation_map(feature_set_id: str):
 
     feature_annotation_query = f"SELECT FeatureId, GeneSymbol from FeatureAnnotation where FeatureAnnotationSetId='{fas_map_curr_id}';"
     feature_annotation_results = api.query.execute_sql(schema_name="Microarray", sql=feature_annotation_query, timeout=30)
-    feature_annotation_map = dict(
-        list(map(lambda feature_annotation_row: (feature_annotation_row["FeatureId"], feature_annotation_row["GeneSymbol"]), feature_annotation_results["rows"])))
-    # print("feature_annotation_map: %s" % feature_annotation_map)
-    return feature_annotation_map
+
+    feature_annotation_map = list(map(lambda feature_annotation_row: (feature_annotation_row["FeatureId"], feature_annotation_row["GeneSymbol"]), feature_annotation_results["rows"]))
+
+    # map_file = open("/tmp/feature_annotation_map.txt", "r+")
+    # [map_file.write(f"{line}\n") for line in feature_annotation_map]
+    # map_file.close()
+
+    #print("feature_annotation_map: %s" % feature_annotation_map)
+
+    return dict(feature_annotation_map)
 
 
 def main():
@@ -150,18 +156,6 @@ def main():
         print("len(gene_names): %s" % len(gene_names))
         gene_expression_csv_path = os.path.join('/tmp', download_link.replace("tsv", "csv"))
         print("writing %s " % gene_expression_csv_path)
-
-        # def asdf(gene_name: str):
-        #     tmp = list(map(lambda a: list(map(lambda b: float(b), a.split(",")[1:])), filter(lambda x: x.split(",")[0] == gene_name, lines)))
-        #     mean = numpy.mean(numpy.array(tmp), axis=0)
-        #     values = ",".join(list(map(lambda x: "{:.10f}".format(x), mean.tolist())))
-        #     merged_line = f"{gene_name},{values}"
-        #     print("merged_line: %s" % merged_line)
-        #     return merged_line
-        #
-        # pool = multiprocessing.Pool(4)
-        # with pool:
-        #     new_lines = list(pool.map(asdf, gene_names))
 
         with open(gene_expression_csv_path, "w") as csv_file:
             for (idx, gene_name) in enumerate(gene_names):
