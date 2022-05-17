@@ -5,26 +5,8 @@ from fastapi import Form, Query
 from pydantic import BaseModel, Field
 from pydantic.networks import EmailStr
 from enum import Enum
+from fuse_utilities.main import as_form, DataType, FileType
 
-
-def as_form(cls: Type[BaseModel]):
-    new_params = [
-        inspect.Parameter(
-            field.alias,
-            inspect.Parameter.POSITIONAL_ONLY,
-            default=(Form(field.default) if not field.required else Form(...)),
-        )
-        for field in cls.__fields__.values()
-    ]
-
-    async def _as_form(**data):
-        return cls(**data)
-
-    sig = inspect.signature(_as_form)
-    sig = sig.replace(parameters=new_params)
-    _as_form.__signature__ = sig
-    setattr(cls, "as_form", _as_form)
-    return cls
 
 
 @as_form
@@ -109,28 +91,6 @@ class ImmunespaceProviderResponse:
 class Passports(BaseModel):
     expand: bool = False
     passports: List[str] = ["eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJnYTRnaF9wYXNzcG9ydF92MSI6W119.JJ5rN0ktP0qwyZmIPpxmF_p7JsxAZH6L6brUxtad3CM"]
-
-
-class DataType(str, Enum):
-    geneExpression = 'class_dataset_expression'
-    resultsPCATable = 'class_results_PCATable'
-    resultsCellFieDetailScoringTable = 'class_results_CellFieDetailScoringTable'
-    resultsCellFieScoreBinaryTable = 'class_results_CellFieScoreBinaryTable'
-    resultsCellFieScoreTable = 'class_results_CellFieScoreTable'
-    resultsCellFieTaskInfoTable = 'class_results_CellFieTaskInfoTable'
-    # xxx to add more datatypes: expand this
-
-
-class FileType(str, Enum):
-    datasetGeneExpression = 'filetype_dataset_expression'
-    datasetProperties = 'filetype_dataset_properties'
-    datasetArchive = 'filetype_dataset_archive'
-    resultsPCATable = 'filetype_results_PCATable'
-    resultsCellFieDetailScoringTable = 'filetype_results_CellFieDetailScoringTable'
-    resultsCellFieScoreBinaryTable = 'filetype_results_CellFieScoreBinaryTable'
-    resultsCellFieScoreTable = 'filetype_results_CellFieScoreTable'
-    resultsCellFieTaskInfoTable = 'filetype_results_CellFieTaskInfoTable'
-    # xxx to add more datatypes: expand this
 
 
 @as_form
