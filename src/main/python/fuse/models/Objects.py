@@ -1,12 +1,8 @@
-import inspect
-from typing import Type, List, Optional, Any
+from typing import List, Optional, Any
 
-from fastapi import Form, Query
+from fuse_utilities.main import as_form, DataType, FileType
 from pydantic import BaseModel, Field
 from pydantic.networks import EmailStr
-from enum import Enum
-from fuse_utilities.main import as_form, DataType, FileType
-
 
 
 @as_form
@@ -109,5 +105,3 @@ class ProviderParameters(BaseModel):
                                                  description="enables verification checking by clients; this is a json list of objects, each object contains 'checksum' and 'type' fields, where 'type' might be 'sha-256' for example.")
     requested_object_id: Optional[str] = Field(default=None,
                                                description="optional argument to be used by submitter to request an object_id; this could be, for example, used to retrieve objects from a 3rd party for which this endpoint is a proxy. The requested object_id is not guaranteed, enduser should check return value for final object_id used.")
-
-

@@ -7,7 +7,6 @@ import shutil
 import traceback
 import uuid
 from logging.config import dictConfig
-from typing import List, Optional
 
 import docker
 import pymongo
@@ -16,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import StreamingResponse
 
 # https://developer.mozilla.org/en-US/docs/Web/API/WritableStream
-from fuse.models.Objects import Passports, Contents, ImmunespaceProviderResponse, DataType, FileType, ProviderParameters
+from fuse.models.Objects import Passports, Contents, ImmunespaceProviderResponse, ProviderParameters
 
 LOGGING = {
     'version': 1,
