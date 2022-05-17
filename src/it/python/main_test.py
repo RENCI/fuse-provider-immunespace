@@ -22,7 +22,7 @@ def test_submit():
               'file_type': 'filetype_dataset_expression',
               'submitter_id': 'jdr0887@gmail.com',
               'accession_id': 'asdf',
-              'apikey': 'apikey|5d2f826c452af1849b3f106630fef50a'}
+              'apikey': 'apikey|01a141db71869525cbf60a5a333edd31'}
     r = requests.post(url=url, data=params, headers={'accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded'}, timeout=45)
     status_code = r.status_code
     response_json = r.json()
