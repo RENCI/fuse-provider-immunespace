@@ -3,8 +3,7 @@ services:
   immunespace-mongodb:
     container_name: immunespace-mongodb
     image: mongo
-    env_file:
-      - .env
+    env_file: .env
     restart: always
     volumes:
       - mongodb-data-container:/data/db
