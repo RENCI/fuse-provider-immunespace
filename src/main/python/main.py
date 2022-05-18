@@ -12,10 +12,11 @@ import docker
 import pymongo
 from fastapi import FastAPI, Depends, Path, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fuse_utilities.main import ProviderParameters, FileType, DataType
 from starlette.responses import StreamingResponse
 
 # https://developer.mozilla.org/en-US/docs/Web/API/WritableStream
-from fuse.models.Objects import Passports, Contents, ImmunespaceProviderResponse, ProviderParameters
+from fuse.models.Objects import Contents, ImmunespaceProviderResponse, ProviderResponse
 
 LOGGING = {
     'version': 1,
@@ -243,33 +244,47 @@ async def submit(parameters: ProviderParameters = Depends(ProviderParameters.as_
             logger.info(f"local_path: {local_path}")
             os.makedirs(local_path, exist_ok=True)
             stderr = run_immunespace_download(immunespace_download_id=immunespace_download_id, accession_id=parameters.accession_id, apikey=parameters.apikey)
-            for (file_type, file_name) in [("filetype_dataset_expression", "geneBySampleMatrix.csv"), ("filetype_dataset_properties", "phenoDataMatrix.csv")]:
+            for (file_type, file_name) in [(FileType.datasetGeneExpression, "geneBySampleMatrix.csv"), (FileType.datasetProperties, "phenoDataMatrix.csv")]:
+                file_path = os.path.join(local_path, file_name)
+                with open(file_path) as f:
+                    number_of_columns = len(f.readline().rstrip().split(sep=",")) - 1
+                f.close()
+
+                with open(file_path) as f:
+                    number_of_rows = len(f.readlines())
+                f.close()
+
+                size = os.path.getsize(file_path)
+                dimensions = f"{number_of_rows}x{number_of_columns}"
+
                 immunespace_download_entry = {"immunespace_download_id": immunespace_download_id, "submitter_id": parameters.submitter_id,
-                                              "data_type": "class_dataset_expression", "object_id": str(uuid.uuid4()), "accession_id": parameters.accession_id,
+                                              "data_type": DataType.geneExpression, "object_id": str(uuid.uuid4()), "accession_id": parameters.accession_id,
                                               "apikey": parameters.apikey, "file_type": file_type, "file_name": file_name,
-                                              "date_downloaded": datetime.datetime.utcnow(), "stderr": stderr}
+                                              "date_downloaded": datetime.datetime.utcnow(), "size": size, "dimensions": dimensions, "stderr": stderr}
                 mongo_db_immunespace_downloads_column.insert_one(immunespace_download_entry)
 
         immunespace_download_query = {"submitter_id": parameters.submitter_id, "accession_id": parameters.accession_id,
                                       "apikey": parameters.apikey, "file_type": parameters.file_type}
 
         projection = {"_id": 0, "immunespace_download_id": 1, "object_id": 1, "submitter_id": 1, "accession_id": 1, "apikey": 1, "status": 1, "data_type": 1,
-                      "file_type": 1, "file_name": 1, "stderr": 1, "date_downloaded": 1}
+                      "file_type": 1, "file_name": 1, "size": 1, "dimensions": 1, "stderr": 1, "date_downloaded": 1}
         found_immunespace_download = mongo_db_immunespace_downloads_column.find_one(immunespace_download_query, projection)
 
         # contents = Contents(id=found_immunespace_download["object_id"], name=found_immunespace_download["file_name"],
         #                     drs_uri=f"http://localhost:{os.getenv('API_PORT')}/files/{found_immunespace_download['object_id']}")
 
-        ret = ImmunespaceProviderResponse(id=found_immunespace_download["object_id"],
-                                          object_id=found_immunespace_download["object_id"],
-                                          submitter_id=found_immunespace_download["submitter_id"],
-                                          name=found_immunespace_download['file_name'],
-                                          self_uri=f"http://localhost:{os.getenv('API_PORT')}/objects/{found_immunespace_download['object_id']}",
-                                          data_type=found_immunespace_download["data_type"],
-                                          file_type=found_immunespace_download["file_type"],
-                                          created_time=f"{found_immunespace_download['date_downloaded']}",
-                                          mime_type="application/csv", status="finished",
-                                          contents=[], stderr=found_immunespace_download['stderr'])
+        ret = ProviderResponse(id=found_immunespace_download["object_id"],
+                               object_id=found_immunespace_download["object_id"],
+                               submitter_id=found_immunespace_download["submitter_id"],
+                               size=found_immunespace_download["size"],
+                               dimensions=found_immunespace_download["dimensions"],
+                               name=found_immunespace_download['file_name'],
+                               self_uri=f"http://localhost:{os.getenv('API_PORT')}/objects/{found_immunespace_download['object_id']}",
+                               data_type=found_immunespace_download["data_type"],
+                               file_type=found_immunespace_download["file_type"],
+                               created_time=f"{found_immunespace_download['date_downloaded']}",
+                               mime_type="application/csv", status="finished",
+                               contents=[], stderr=found_immunespace_download['stderr'])
 
         return vars(ret)
 
