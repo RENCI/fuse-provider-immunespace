@@ -7,7 +7,7 @@ EXPOSE 8085
 
 COPY . /app
 RUN pip install -r /app/requirements.txt
-RUN pip install -i https://test.pypi.org/simple/ fuse-utilities
+RUN pip install -i https://test.pypi.org/simple/ fuse-cdm
 
 WORKDIR /app/src/main/python
 
