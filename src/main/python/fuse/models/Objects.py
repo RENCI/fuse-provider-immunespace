@@ -1,6 +1,6 @@
 from typing import Optional
 
-from fuse_utilities.main import AccessMethods, Contents, Checksums
+from fuse_cdm.main import Checksums, AccessMethods, Contents
 from pydantic import BaseModel
 
 
@@ -16,7 +16,7 @@ class ProviderResponse(BaseModel):
     status: str
     description: Optional[str] = None,
     size: Optional[int] = 0,
-    dimensions: Optional[str] = None,
+    dimension: Optional[str] = None,
     updated_time: Optional[str] = None,
     version: Optional[str] = None,
     aliases: Optional[list[str]] = None,

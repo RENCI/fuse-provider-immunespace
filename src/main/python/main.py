@@ -12,11 +12,11 @@ import docker
 import pymongo
 from fastapi import FastAPI, Depends, Path, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fuse_utilities.main import ProviderParameters, FileType, DataType
+from fuse_cdm.main import ProviderParameters, FileType, DataType, Contents, Passports
 from starlette.responses import StreamingResponse
 
 # https://developer.mozilla.org/en-US/docs/Web/API/WritableStream
-from fuse.models.Objects import Contents, ImmunespaceProviderResponse, ProviderResponse
+from fuse.models.Objects import ProviderResponse
 
 LOGGING = {
     'version': 1,
@@ -122,27 +122,27 @@ async def objects(object_id: str = Path(default="", description="DrsObject ident
                   expand: bool = Query(default=False,
                                        description="If false and the object_id refers to a bundle, then the ContentsObject array contains only those objects directly contained in the bundle. That is, if the bundle contains other bundles, those other bundles are not recursively included in the result. If true and the object_id refers to a bundle, then the entire set of objects in the bundle is expanded. That is, if the bundle contains aother bundles, then those other bundles are recursively expanded and included in the result. Recursion continues through the entire sub-tree of the bundle. If the object_id refers to a blob, then the query parameter is ignored.")):
     projection = {"_id": 0, "immunespace_download_id": 1, "object_id": 1, "submitter_id": 1, "accession_id": 1, "apikey": 1, "status": 1, "data_type": 1,
-                  "file_type": 1, "file_name": 1, "stderr": 1, "date_downloaded": 1}
+                  "file_type": 1, "file_name": 1, "size": 1, "dimension": 1, "stderr": 1, "date_downloaded": 1}
     query = {"object_id": object_id}
     found_immunespace_download = mongo_db_immunespace_downloads_column.find_one(query, projection)
     if found_immunespace_download is not None:
         logger.info(f"{found_immunespace_download}")
-        file_size = os.path.getsize(f"/app/data/{found_immunespace_download['immunespace_download_id']}/{found_immunespace_download['file_name']}")
         contents = Contents(id=found_immunespace_download["object_id"], name=found_immunespace_download["file_name"],
                             drs_uri=f"http://fuse-provider-immunespace:{os.getenv('API_PORT')}/files/{object_id}")
         # contents.append(Contents(id="archive", name="archive", drs_uri=f"http://localhost:{os.getenv('API_PORT')}/archive/{object_id}"))
-        ret = ImmunespaceProviderResponse(id=found_immunespace_download["object_id"],
-                                          object_id=found_immunespace_download["object_id"],
-                                          submitter_id=found_immunespace_download["submitter_id"],
-                                          name=found_immunespace_download['immunespace_download_id'],
-                                          self_uri=f"http://fuse-provider-immunespace:{os.getenv('API_PORT')}/objects/{found_immunespace_download['object_id']}",
-                                          size=file_size,
-                                          data_type=found_immunespace_download["data_type"],
-                                          file_type=found_immunespace_download["file_type"],
-                                          created_time=f"{found_immunespace_download['date_downloaded']}",
-                                          mime_type="application/csv",
-                                          status="finished",
-                                          contents=[contents], stderr=found_immunespace_download['stderr'])
+        ret = ProviderResponse(id=found_immunespace_download["object_id"],
+                               object_id=found_immunespace_download["object_id"],
+                               submitter_id=found_immunespace_download["submitter_id"],
+                               name=found_immunespace_download['immunespace_download_id'],
+                               self_uri=f"http://fuse-provider-immunespace:{os.getenv('API_PORT')}/objects/{found_immunespace_download['object_id']}",
+                               size=found_immunespace_download['size'],
+                               dimension=found_immunespace_download['dimension'],
+                               data_type=found_immunespace_download["data_type"],
+                               file_type=found_immunespace_download["file_type"],
+                               created_time=f"{found_immunespace_download['date_downloaded']}",
+                               mime_type="application/csv",
+                               status="finished",
+                               contents=[contents], stderr=found_immunespace_download['stderr'])
 
         return vars(ret)
     else:
@@ -255,29 +255,29 @@ async def submit(parameters: ProviderParameters = Depends(ProviderParameters.as_
                 f.close()
 
                 size = os.path.getsize(file_path)
-                dimensions = f"{number_of_rows}x{number_of_columns}"
+                dimension = f"{number_of_rows}x{number_of_columns}"
 
                 immunespace_download_entry = {"immunespace_download_id": immunespace_download_id, "submitter_id": parameters.submitter_id,
                                               "data_type": DataType.geneExpression, "object_id": str(uuid.uuid4()), "accession_id": parameters.accession_id,
                                               "apikey": parameters.apikey, "file_type": file_type, "file_name": file_name,
-                                              "date_downloaded": datetime.datetime.utcnow(), "size": size, "dimensions": dimensions, "stderr": stderr}
+                                              "date_downloaded": datetime.datetime.utcnow(), "size": size, "dimension": dimension, "stderr": stderr}
                 mongo_db_immunespace_downloads_column.insert_one(immunespace_download_entry)
 
         immunespace_download_query = {"submitter_id": parameters.submitter_id, "accession_id": parameters.accession_id,
                                       "apikey": parameters.apikey, "file_type": parameters.file_type}
 
         projection = {"_id": 0, "immunespace_download_id": 1, "object_id": 1, "submitter_id": 1, "accession_id": 1, "apikey": 1, "status": 1, "data_type": 1,
-                      "file_type": 1, "file_name": 1, "size": 1, "dimensions": 1, "stderr": 1, "date_downloaded": 1}
+                      "file_type": 1, "file_name": 1, "size": 1, "dimension": 1, "stderr": 1, "date_downloaded": 1}
         found_immunespace_download = mongo_db_immunespace_downloads_column.find_one(immunespace_download_query, projection)
 
         # contents = Contents(id=found_immunespace_download["object_id"], name=found_immunespace_download["file_name"],
-        #                     drs_uri=f"http://localhost:{os.getenv('API_PORT')}/files/{found_immunespace_download['object_id']}")
+        # drs_uri=f"http://localhost:{os.getenv('API_PORT')}/files/{found_immunespace_download['object_id']}")
 
         ret = ProviderResponse(id=found_immunespace_download["object_id"],
                                object_id=found_immunespace_download["object_id"],
                                submitter_id=found_immunespace_download["submitter_id"],
                                size=found_immunespace_download["size"],
-                               dimensions=found_immunespace_download["dimensions"],
+                               dimension=found_immunespace_download["dimension"],
                                name=found_immunespace_download['file_name'],
                                self_uri=f"http://localhost:{os.getenv('API_PORT')}/objects/{found_immunespace_download['object_id']}",
                                data_type=found_immunespace_download["data_type"],
